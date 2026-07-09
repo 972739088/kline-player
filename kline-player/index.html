@@ -599,6 +599,7 @@
 
         // 布局缓存
         let layout = {};
+        let tagDeleteRects = []; // 标签删除按钮点击区域 [{id, x, y, w, h}]
 
         // ============================================================
         //  3. Canvas 尺寸 & 布局计算
@@ -627,8 +628,13 @@
 
         function calcLayout() {
             const rect = container.getBoundingClientRect();
-            const w = rect.width;
-            const h = rect.height;
+            let w = rect.width;
+            let h = rect.height;
+            // 后备：容器尺寸为0时使用canvas实际尺寸
+            if (w < 10 || h < 10) {
+                w = parseFloat(canvas.style.width) || 370;
+                h = parseFloat(canvas.style.height) || 350;
+            }
             const pad = { top: 50, bottom: 30, left: 50, right: 16 };
 
             // 根据宽度决定可见K线数量
@@ -775,11 +781,13 @@
                 ctx.setLineDash([5, 4]);
                 ctx.strokeRect(x1, boxTopY, x2 - x1, boxH);
                 ctx.setLineDash([]);
-                // 标签文字（框上方，带引线）
+                // 标签文字（框上方，胶囊+斜体+透明度+可删除）
                 const labelCX = (x1 + x2) / 2;
-                const labelTW = ctx.measureText('📌 ' + tag.text).width + 16;
-                const labelTX = Math.max(pad.left, Math.min(w - pad.right - labelTW, labelCX - labelTW / 2));
-                // 引线：从标签连接到框顶部
+                const mText = '📌 ' + tag.text;
+                const textW2 = ctx.measureText(mText).width;
+                const mLabelW = textW2 + 28;
+                const mLabelTX = Math.max(pad.left, Math.min(w - pad.right - mLabelW, labelCX - mLabelW / 2));
+                // 引线
                 ctx.strokeStyle = multiTagColor + '66';
                 ctx.lineWidth = 1;
                 ctx.setLineDash([3, 3]);
@@ -788,37 +796,45 @@
                 ctx.lineTo(labelCX, boxTopY - 20);
                 ctx.stroke();
                 ctx.setLineDash([]);
-                // 标签背景
+                // 胶囊背景
+                const mlH = 20;
+                const mlY = boxTopY - 20 - mlH;
                 ctx.fillStyle = multiTagColor + '1f';
-                ctx.strokeStyle = multiTagColor + 'b3';
+                ctx.strokeStyle = multiTagColor + 'BF';
                 ctx.lineWidth = 1;
-                const tr = 4;
-                const lx = labelTX, rx = labelTX + labelTW, ty = boxTopY - 38, by = boxTopY - 20;
+                const mr = mlH / 2;
+                const mlx = mLabelTX, mrx = mLabelTX + mLabelW, mty = mlY, mby = mlY + mlH;
                 ctx.beginPath();
-                ctx.moveTo(lx + tr, ty);
-                ctx.lineTo(rx - tr, ty);
-                ctx.quadraticCurveTo(rx, ty, rx, ty + tr);
-                ctx.lineTo(rx, by - tr);
-                ctx.quadraticCurveTo(rx, by, rx - tr, by);
-                ctx.lineTo(lx + tr, by);
-                ctx.quadraticCurveTo(lx, by, lx, by - tr);
-                ctx.lineTo(lx, ty + tr);
-                ctx.quadraticCurveTo(lx, ty, lx + tr, ty);
+                ctx.moveTo(mlx + mr, mty);
+                ctx.lineTo(mrx - mr, mty);
+                ctx.quadraticCurveTo(mrx, mty, mrx, mty + mr);
+                ctx.lineTo(mrx, mby - mr);
+                ctx.quadraticCurveTo(mrx, mby, mrx - mr, mby);
+                ctx.lineTo(mlx + mr, mby);
+                ctx.quadraticCurveTo(mlx, mby, mlx, mby - mr);
+                ctx.lineTo(mlx, mty + mr);
+                ctx.quadraticCurveTo(mlx, mty, mlx + mr, mty);
                 ctx.closePath();
                 ctx.fill();
                 ctx.stroke();
-                // 文字
-                ctx.fillStyle = multiTagColor;
-                ctx.font = 'bold 11px sans-serif';
+                // 文字（斜体，75%透明度）
+                ctx.fillStyle = multiTagColor + 'BF';
+                ctx.font = 'italic 11px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText('📌 ' + tag.text, labelCX, (ty + by) / 2);
+                ctx.fillText(mText, labelCX, (mty + mby) / 2);
+                // 删除按钮
+                const mDelX = mrx - 16;
+                ctx.fillStyle = multiTagColor + '80';
+                ctx.font = '12px sans-serif';
+                ctx.fillText('✕', mDelX + 8, (mty + mby) / 2);
+                tagDeleteRects.push({ id: tag.id, x: mDelX, y: mty + 1, w: 16, h: mlH - 2 });
                 // 范围
                 ctx.fillStyle = multiTagColor + '80';
                 ctx.font = '9px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
-                ctx.fillText('#' + tag.start + '~#' + tag.end + ' (' + (tag.end - tag.start + 1) + '根)', labelCX, by + 3);
+                ctx.fillText('#' + tag.start + '~#' + tag.end + ' (' + (tag.end - tag.start + 1) + '根)', labelCX, mby + 3);
             }
 
             // ---- 绘制每根K线（只画已播放的） ----
@@ -865,7 +881,8 @@
                 }
             }
 
-            // ---- 绘制单根标签标记（K线上方 + 引线连接） ----
+            // ---- 绘制单根标签标记（胶囊+斜体+透明度+可删除） ----
+            tagDeleteRects = [];
             const singleTags = tags.filter(t => t.type === 'single');
             for (const tag of singleTags) {
                 const idx = tag.start;
@@ -874,65 +891,67 @@
                 const d = klineData[idx];
                 // 引线终点：K线的最高价位置
                 const endY = pad.top + (1 - (d.high - priceMin) / priceRange) * chartH;
-                // 标签卡片位置：在K线上方 28px
-                const labelTopY = endY - 30;
+                // 标签卡片
                 const labelH = 20;
-                const labelW = Math.max(30, ctx.measureText(tag.text).width + 16);
-                const labelX = cx - labelW / 2;
-                const labelY = labelTopY - labelH;
-                // 确保标签不超出左边界
-                const finalLabelX = Math.max(pad.left, Math.min(w - pad.right - labelW, labelX));
+                const textW = ctx.measureText(tag.text).width;
+                const labelW = textW + 28; // 文字 + 删除按钮空间
+                const labelX = Math.max(pad.left, Math.min(w - pad.right - labelW, cx - labelW / 2));
+                const labelY = endY - 30 - labelH;
+                const col = singleTagColor;
 
-                // 绘制引线（虚线）
-                ctx.strokeStyle = singleTagColor + '99';
+                // 引线（虚线，75%透明度）
+                ctx.strokeStyle = col + 'BF';
                 ctx.lineWidth = 1;
                 ctx.setLineDash([3, 3]);
                 ctx.beginPath();
                 ctx.moveTo(cx, endY);
-                ctx.lineTo(cx, labelTopY);
+                ctx.lineTo(cx, endY - 30);
                 ctx.stroke();
                 ctx.setLineDash([]);
 
-                // 标签背景
-                const bgColor = singleTagColor + '26';
-                ctx.fillStyle = bgColor;
-                ctx.strokeStyle = singleTagColor;
+                // 胶囊背景（75%透明度）
+                ctx.fillStyle = col + '26';
+                ctx.strokeStyle = col + 'BF';
                 ctx.lineWidth = 1;
-                const r = 4;
-                const lb = finalLabelX, rt = finalLabelX + labelW, tp = labelY, bt = labelY + labelH;
+                const r = labelH / 2; // 全圆角=胶囊
                 ctx.beginPath();
-                ctx.moveTo(lb + r, tp);
-                ctx.lineTo(rt - r, tp);
-                ctx.quadraticCurveTo(rt, tp, rt, tp + r);
-                ctx.lineTo(rt, bt - r);
-                ctx.quadraticCurveTo(rt, bt, rt - r, bt);
-                ctx.lineTo(lb + r, bt);
-                ctx.quadraticCurveTo(lb, bt, lb, bt - r);
-                ctx.lineTo(lb, tp + r);
-                ctx.quadraticCurveTo(lb, tp, lb + r, tp);
+                ctx.moveTo(labelX + r, labelY);
+                ctx.lineTo(labelX + labelW - r, labelY);
+                ctx.quadraticCurveTo(labelX + labelW, labelY, labelX + labelW, labelY + r);
+                ctx.lineTo(labelX + labelW, labelY + labelH - r);
+                ctx.quadraticCurveTo(labelX + labelW, labelY + labelH, labelX + labelW - r, labelY + labelH);
+                ctx.lineTo(labelX + r, labelY + labelH);
+                ctx.quadraticCurveTo(labelX, labelY + labelH, labelX, labelY + labelH - r);
+                ctx.lineTo(labelX, labelY + r);
+                ctx.quadraticCurveTo(labelX, labelY, labelX + r, labelY);
                 ctx.closePath();
                 ctx.fill();
                 ctx.stroke();
 
-                // 标签文字
-                ctx.fillStyle = singleTagColor;
-                ctx.font = '11px sans-serif';
+                // 标签文字（斜体，75%透明度）
+                ctx.fillStyle = col + 'BF';
+                ctx.font = 'italic 11px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(tag.text, finalLabelX + labelW / 2, labelY + labelH / 2);
+                ctx.fillText(tag.text, labelX + textW / 2 + 4, labelY + labelH / 2);
 
-                // 小圆点标记在K线上方
-                ctx.fillStyle = singleTagColor;
+                // 删除按钮 ✕（在胶囊右侧）
+                const delX = labelX + labelW - 16;
+                const delY = labelY + 1;
+                const delS = 16;
+                ctx.fillStyle = col + '80';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('✕', delX + delS / 2, labelY + labelH / 2);
+                // 记录删除按钮点击区域
+                tagDeleteRects.push({ id: tag.id, x: delX, y: delY, w: delS, h: labelH - 2 });
+
+                // 小圆点标记
+                ctx.fillStyle = col + 'BF';
                 ctx.beginPath();
                 ctx.arc(cx, endY - 4, 3, 0, Math.PI * 2);
                 ctx.fill();
-
-                // 索引号在标签右侧
-                ctx.fillStyle = '#8b949e';
-                ctx.font = '9px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('#' + idx, finalLabelX + labelW + 3, labelY + labelH / 2);
             }
 
             // ---- 当前播放位置指示 ----
@@ -1307,6 +1326,17 @@
         //  7. 交互处理
         // ============================================================
         function handleCanvasTap(clientX, clientY) {
+            // 先检查是否点击了标签的删除按钮
+            const rect = canvas.getBoundingClientRect();
+            const cx2 = clientX - rect.left;
+            const cy2 = clientY - rect.top;
+            for (const dr of tagDeleteRects) {
+                if (cx2 >= dr.x && cx2 <= dr.x + dr.w && cy2 >= dr.y && cy2 <= dr.y + dr.h) {
+                    deleteTagAction(dr.id);
+                    return;
+                }
+            }
+
             const idx = getKlineIndexFromPoint(clientX, clientY);
             if (idx < 0) return;
 
