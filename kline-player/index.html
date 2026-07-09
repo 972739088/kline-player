@@ -601,6 +601,8 @@
         // 布局缓存
         let layout = {};
         let tagDeleteRects = []; // 标签删除按钮点击区域 [{id, x, y, w, h}]
+        let tagHitRects = [];    // 标签整体点击区域 [{id, x, y, w, h}]
+        let selectedTagId = null; // 当前选中的标签ID（显示删除按钮）
 
         // ============================================================
         //  3. Canvas 尺寸 & 布局计算
@@ -832,14 +834,18 @@
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(mText, mDotX + 8, mDotY);
-                // 删除按钮（加大）
-                const mDelX = mrx - 22;
-                ctx.fillStyle = multiTagColor + '80';
-                ctx.font = '16px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('✕', mDelX + 11, mDotY);
-                tagDeleteRects.push({ id: tag.id, x: mDelX, y: mty, w: 22, h: mlH });
+                // 记录标签整体点击区域
+                tagHitRects.push({ id: tag.id, x: mlx, y: mty, w: mLabelW, h: mlH });
+                // 删除按钮 - 仅选中时显示，缩小
+                if (tag.id === selectedTagId) {
+                    const mDelX = mrx - 18;
+                    ctx.fillStyle = multiTagColor + 'BF';
+                    ctx.font = '10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('✕', mDelX + 9, mDotY);
+                    tagDeleteRects.push({ id: tag.id, x: mDelX, y: mty, w: 18, h: mlH });
+                }
                 // 范围
                 ctx.fillStyle = multiTagColor + '80';
                 ctx.font = '9px sans-serif';
@@ -892,26 +898,28 @@
                 }
             }
 
-            // ---- 绘制单根标签标记（胶囊+斜体+透明度+可删除） ----
+            // ---- 绘制单根标签标记 ----
             tagDeleteRects = [];
+            tagHitRects = [];
             const singleTags = tags.filter(t => t.type === 'single');
             for (const tag of singleTags) {
                 const idx = tag.start;
                 if (idx < startIdx || idx > endIdx) continue;
                 const cx = drawStartX + (idx - startIdx) * totalStep + candleW / 2;
                 const d = klineData[idx];
-                // 引线终点：K线的最高价位置
                 const endY = pad.top + (1 - (d.high - priceMin) / priceRange) * chartH;
-                // 标签卡片
                 const labelH = 20;
                 const textW = ctx.measureText(tag.text).width;
-                const labelW = textW + 34; // 圆点 + 文字 + 删除按钮
+                const labelW = textW + 34;
                 const labelX = Math.max(pad.left, Math.min(w - pad.right - labelW, cx - labelW / 2));
                 const labelY = endY - 30 - labelH;
                 const col = singleTagColor;
-                const alp = '99'; // 60%透明度
+                const alp = '99';
 
-                // 引线（虚线，60%透明度）
+                // 记录标签整体点击区域
+                tagHitRects.push({ id: tag.id, x: labelX, y: labelY, w: labelW, h: labelH });
+
+                // 引线
                 ctx.strokeStyle = col + alp;
                 ctx.lineWidth = 1;
                 ctx.setLineDash([3, 3]);
@@ -921,7 +929,7 @@
                 ctx.stroke();
                 ctx.setLineDash([]);
 
-                // 胶囊背景（60%透明度）
+                // 胶囊背景
                 ctx.fillStyle = col + '0F';
                 ctx.strokeStyle = col + alp;
                 ctx.lineWidth = 1;
@@ -940,7 +948,7 @@
                 ctx.fill();
                 ctx.stroke();
 
-                // 圆点标记（在文字前面）
+                // 圆点
                 const dotX = labelX + 10;
                 const dotY = labelY + labelH / 2;
                 ctx.fillStyle = col + alp;
@@ -948,23 +956,25 @@
                 ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
                 ctx.fill();
 
-                // 标签文字（斜体，60%透明度）
+                // 文字
                 ctx.fillStyle = col + alp;
                 ctx.font = 'italic 11px sans-serif';
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(tag.text, dotX + 8, dotY);
 
-                // 删除按钮 ✕（在胶囊右侧，加大）
-                const delX = labelX + labelW - 22;
-                ctx.fillStyle = col + '80';
-                ctx.font = '16px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('✕', delX + 11, dotY);
-                tagDeleteRects.push({ id: tag.id, x: delX, y: labelY, w: 22, h: labelH });
+                // 删除按钮 - 仅选中时显示，字体缩小
+                if (tag.id === selectedTagId) {
+                    const delX = labelX + labelW - 18;
+                    ctx.fillStyle = col + 'BF';
+                    ctx.font = '10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('✕', delX + 9, dotY);
+                    tagDeleteRects.push({ id: tag.id, x: delX, y: labelY, w: 18, h: labelH });
+                }
 
-                // 小圆点标记在K线上方
+                // 小圆点
                 ctx.fillStyle = col + alp;
                 ctx.beginPath();
                 ctx.arc(cx, endY - 4, 3, 0, Math.PI * 2);
@@ -1343,22 +1353,44 @@
         //  7. 交互处理
         // ============================================================
         function handleCanvasTap(clientX, clientY) {
-            // 先检查是否点击了标签的删除按钮
             const rect = canvas.getBoundingClientRect();
             const cx2 = clientX - rect.left;
             const cy2 = clientY - rect.top;
+
+            // 先检查是否点击了选中的标签上的删除按钮
             for (const dr of tagDeleteRects) {
                 if (cx2 >= dr.x && cx2 <= dr.x + dr.w && cy2 >= dr.y && cy2 <= dr.y + dr.h) {
                     deleteTagAction(dr.id);
+                    selectedTagId = null;
                     return;
                 }
             }
 
+            // 再检查是否点击到某个标签区域（选中/取消选中）
+            for (const hr of tagHitRects) {
+                if (cx2 >= hr.x && cx2 <= hr.x + hr.w && cy2 >= hr.y && cy2 <= hr.y + hr.h) {
+                    if (selectedTagId === hr.id) {
+                        selectedTagId = null; // 再次点击取消选中
+                    } else {
+                        selectedTagId = hr.id; // 选中该标签
+                    }
+                    drawChart();
+                    return;
+                }
+            }
+
+            // 点击空白区域取消选中
+            if (selectedTagId !== null) {
+                selectedTagId = null;
+                drawChart();
+                return;
+            }
+
+            // 点击K线处理
             const idx = getKlineIndexFromPoint(clientX, clientY);
             if (idx < 0) return;
 
             if (mode === 'play') {
-                // 播放模式下点击跳转位置
                 stopPlay();
                 currentIndex = idx;
                 viewOffset = 0;
@@ -1367,11 +1399,13 @@
             }
 
             if (mode === 'single') {
+                if (isPlaying) stopPlay(); // 播放中先暂停
                 showTagDialog('single', idx, idx);
                 return;
             }
 
             if (mode === 'multi') {
+                if (isPlaying) stopPlay(); // 播放中先暂停
                 if (multiStartIndex < 0) {
                     multiStartIndex = idx;
                     drawChart();
@@ -1425,19 +1459,8 @@
             isDraggingChart = false;
         });
 
-        // 兼容 click 事件（先检查删除按钮，再处理其他点击）
+        // click 事件
         canvas.addEventListener('click', (e) => {
-            // 不管是否拖拽过，删除按钮点击始终响应
-            const rect = canvas.getBoundingClientRect();
-            const cx2 = e.clientX - rect.left;
-            const cy2 = e.clientY - rect.top;
-            for (const dr of tagDeleteRects) {
-                if (cx2 >= dr.x && cx2 <= dr.x + dr.w && cy2 >= dr.y && cy2 <= dr.y + dr.h) {
-                    deleteTagAction(dr.id);
-                    return;
-                }
-            }
-            // 非删除点击，受拖拽状态控制
             if (!chartTapMoved) {
                 handleCanvasTap(e.clientX, e.clientY);
             }
@@ -1470,20 +1493,8 @@
 
         canvas.addEventListener('touchend', (e) => {
             isDraggingChart = false;
-            const touch = e.changedTouches[0];
-            // 删除按钮始终响应
-            const rect = canvas.getBoundingClientRect();
-            const cx2 = touch.clientX - rect.left;
-            const cy2 = touch.clientY - rect.top;
-            let hitDelete = false;
-            for (const dr of tagDeleteRects) {
-                if (cx2 >= dr.x && cx2 <= dr.x + dr.w && cy2 >= dr.y && cy2 <= dr.y + dr.h) {
-                    deleteTagAction(dr.id);
-                    hitDelete = true;
-                    break;
-                }
-            }
-            if (!hitDelete && !chartTapMoved) {
+            if (!chartTapMoved) {
+                const touch = e.changedTouches[0];
                 handleCanvasTap(touch.clientX, touch.clientY);
             }
         });
