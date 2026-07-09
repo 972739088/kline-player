@@ -277,6 +277,11 @@
             color: #58a6ff !important;
             background: #0d1f3c !important;
         }
+        .period-btn.active {
+            border-color: #58a6ff !important;
+            color: #58a6ff !important;
+            background: #0d1f3c !important;
+        }
 
         /* ========== 标签列表 ========== */
         .tag-list-wrap {
@@ -381,6 +386,16 @@
             <div class="mode-btn active" data-mode="play" id="modePlay">▶ 播放</div>
             <div class="mode-btn label-single" data-mode="single" id="modeSingle">🏷 单根</div>
             <div class="mode-btn label-multi" data-mode="multi" id="modeMulti">🏷 多根</div>
+        </div>
+
+        <!-- 周期选择 -->
+        <div class="mode-bar" style="border-top:1px solid #30363d;padding:4px 12px">
+            <span style="font-size:10px;color:#484f58;margin-right:4px;display:flex;align-items:center">周期</span>
+            <button class="period-btn active" data-period="1" style="flex:1;padding:3px 0;border:1px solid #30363d;border-radius:4px;background:#0d1117;color:#8b949e;font-size:11px;cursor:pointer;transition:all 0.2s">1分</button>
+            <button class="period-btn" data-period="5" style="flex:1;padding:3px 0;border:1px solid #30363d;border-radius:4px;background:#0d1117;color:#8b949e;font-size:11px;cursor:pointer;transition:all 0.2s">5分</button>
+            <button class="period-btn" data-period="15" style="flex:1;padding:3px 0;border:1px solid #30363d;border-radius:4px;background:#0d1117;color:#8b949e;font-size:11px;cursor:pointer;transition:all 0.2s">15分</button>
+            <button class="period-btn" data-period="30" style="flex:1;padding:3px 0;border:1px solid #30363d;border-radius:4px;background:#0d1117;color:#8b949e;font-size:11px;cursor:pointer;transition:all 0.2s">30分</button>
+            <button class="period-btn" data-period="60" style="flex:1;padding:3px 0;border:1px solid #30363d;border-radius:4px;background:#0d1117;color:#8b949e;font-size:11px;cursor:pointer;transition:all 0.2s">60分</button>
         </div>
 
         <!-- 图表 -->
@@ -521,6 +536,49 @@
         //  2. 全局状态
         // ============================================================
         let klineData = generateKlineData(200);
+        let baseKlineData = klineData.slice(); // 原始1分钟数据
+        let currentPeriod = 1;                 // 当前周期（1分钟=1, 5分钟=5...）
+
+        // 按周期合并K线数据（如5分钟=合并5根1分钟K线）
+        function aggregateData(baseData, period) {
+            if (period <= 1) return baseData.slice();
+            const result = [];
+            for (let i = 0; i < baseData.length; i += period) {
+                const end = Math.min(i + period, baseData.length);
+                const slice = baseData.slice(i, end);
+                const candle = {
+                    index: result.length,
+                    date: slice[0].date,
+                    open: slice[0].open,
+                    close: slice[slice.length - 1].close,
+                    high: Math.max(...slice.map(d => d.high)),
+                    low: Math.min(...slice.map(d => d.low)),
+                };
+                result.push(candle);
+            }
+            return result;
+        }
+
+        // 切换周期
+        function switchPeriod(period) {
+            if (period === currentPeriod) return;
+            currentPeriod = period;
+            klineData.length = 0;
+            const agg = aggregateData(baseKlineData, period);
+            klineData.push(...agg);
+            stopPlay();
+            currentIndex = -1;
+            viewOffset = 0;
+            tags = [];
+            renderTagList();
+            saveTagsToStorage();
+            document.getElementById('totalIdxLabel').textContent = klineData.length;
+            document.getElementById('modeHint').textContent = '▶ 播放模式 · ' + period + '分周期 · ' + klineData.length + '根';
+            document.querySelectorAll('.period-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.period) === period);
+            });
+            drawChart();
+        }
         let currentIndex = -1;          // 当前播放到的索引，-1 表示未开始
         let isPlaying = false;
         let playSpeed = 1;
@@ -1421,6 +1479,11 @@
         document.getElementById('modeSingle').addEventListener('click', () => setMode('single'));
         document.getElementById('modeMulti').addEventListener('click', () => setMode('multi'));
 
+        // 周期切换
+        document.querySelectorAll('.period-btn').forEach(btn => {
+            btn.addEventListener('click', () => switchPeriod(parseInt(btn.dataset.period)));
+        });
+
         // ============================================================
         //  10. 按钮事件
         // ============================================================
@@ -1526,11 +1589,13 @@
         function importCSVData(newData) {
             // 保存原始数据（仅第一次）
             if (!originalKlineData) {
-                originalKlineData = klineData;
+                originalKlineData = baseKlineData.slice();
             }
             // 替换数据
+            baseKlineData = newData.slice();
             klineData.length = 0;
-            klineData.push(...newData);
+            const agg = aggregateData(baseKlineData, currentPeriod);
+            klineData.push(...agg);
             // 重置播放状态
             stopPlay();
             currentIndex = -1;
@@ -1578,14 +1643,13 @@
         // 恢复默认数据
         document.getElementById('csvResetBtn').addEventListener('click', () => {
             if (originalKlineData) {
-                klineData.length = 0;
-                klineData.push(...originalKlineData);
+                baseKlineData = originalKlineData.slice();
             } else {
-                // 重新生成
-                const temp = generateKlineData(200);
-                klineData.length = 0;
-                klineData.push(...temp);
+                baseKlineData = generateKlineData(200);
             }
+            klineData.length = 0;
+            const agg = aggregateData(baseKlineData, currentPeriod);
+            klineData.push(...agg);
             stopPlay();
             currentIndex = -1;
             viewOffset = 0;
@@ -1594,7 +1658,7 @@
             saveTagsToStorage();
             document.getElementById('totalIdxLabel').textContent = klineData.length;
             document.getElementById('csvInput').value = '';
-            document.getElementById('csvStatus').textContent = '↺ 已恢复为默认模拟数据（200条）';
+            document.getElementById('csvStatus').textContent = '↺ 已恢复为默认模拟数据（200条基础1分K线）';
             document.getElementById('csvStatus').style.color = '#8b949e';
             drawChart();
         });
