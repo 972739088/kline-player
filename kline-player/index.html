@@ -375,12 +375,13 @@
         <!-- 标题栏 -->
         <div class="header">
             <h1>📊 K线播放器</h1>
-            <div style="display:flex;align-items:center;gap:6px">
-                <span style="font-size:10px;display:flex;gap:3px;flex-wrap:wrap;max-width:160px;overflow:hidden" id="tagSetSelector"></span>
-                <span class="mode-hint" id="modeHint">▶ 播放</span>
-                <button id="btnSettings" style="background:none;border:none;color:#8b949e;font-size:16px;cursor:pointer;padding:2px 4px;">⚙️</button>
+            <div style="display:flex;align-items:center;gap:4px">
+                <span class="mode-hint" id="modeHint" style="font-size:10px;padding:2px 6px">▶ 播放</span>
+                <button id="btnSettings" style="background:none;border:none;color:#8b949e;font-size:14px;cursor:pointer;padding:2px 4px;">⚙️</button>
             </div>
         </div>
+        <!-- 父标签栏（分类选择） -->
+        <div style="display:flex;gap:4px;padding:4px 8px;background:#161b22;border-bottom:1px solid #21262d;overflow-x:auto;flex-shrink:0;scrollbar-width:none" id="tagSetSelector"></div>
 
         <!-- 模式切换 -->
         <div class="mode-bar">
@@ -431,9 +432,14 @@
 
             <!-- 标签列表 -->
             <div class="tag-list-wrap">
-                <div class="tag-list-title">📌 标签列表 <span id="tagCount" style="color:#484f58">(0)</span></div>
+                <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+                    <span style="font-size:10px;color:#8b949e" id="tagSetNameLabel"></span>
+                    <span id="tagCount" style="font-size:9px;color:#484f58">(0)</span>
+                    <span style="flex:1"></span>
+                    <span id="addChildTagBtn" style="font-size:10px;color:#58a6ff;cursor:pointer;padding:1px 4px;border-radius:4px">＋添加</span>
+                </div>
                 <div class="tag-list" id="tagList">
-                    <span class="tag-empty">暂无标签，切换标签模式后点击K线添加</span>
+                    <span class="tag-empty">暂无标签</span>
                 </div>
             </div>
         </div>
@@ -1177,22 +1183,22 @@
         function renderTagList() {
             const container = document.getElementById('tagList');
             document.getElementById('tagCount').textContent = '(' + tags.length + ')';
+            const label = document.getElementById('tagSetNameLabel');
+            if (label && tagSets[activeTagSetId]) {
+                label.textContent = '📂 ' + tagSets[activeTagSetId].name;
+            }
             if (tags.length === 0) {
-                container.innerHTML = '<span class="tag-empty">暂无标签，切换标签模式后点击K线添加</span>';
+                container.innerHTML = '<span class="tag-empty">暂无子标签，点击"＋添加"或切换到单根/多根模式后点击K线添加</span>';
                 return;
             }
             container.innerHTML = tags.map(t => {
-                const badge = t.type === 'single'
-                    ? '<span class="tag-type-badge">单根</span>'
-                    : '<span class="tag-type-badge multi">多根</span>';
-                const range = t.type === 'single'
-                    ? `<span class="tag-range">#${t.start}</span>`
-                    : `<span class="tag-range">#${t.start}~${t.end}</span>`;
-                return `<div class="tag-item">
-                    ${badge}
-                    <span class="tag-text">${t.text}</span>
-                    ${range}
-                    <span class="tag-del" data-id="${t.id}">✕</span>
+                const badge = t.type === 'single' ? '📍' : '🔲';
+                const range = t.type === 'single' ? `#${t.start}` : `#${t.start}~${t.end}`;
+                return `<div style="display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:2px 6px;border-radius:8px;background:#21262d;border:1px solid #30363d;color:#e6edf3;margin:2px">
+                    <span>${badge}</span>
+                    <span style="max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.text}</span>
+                    <span style="color:#484f58">${range}</span>
+                    <span class="tag-del" data-id="${t.id}" style="color:#f85149;cursor:pointer;font-size:11px">✕</span>
                 </div>`;
             }).join('');
             container.querySelectorAll('.tag-del').forEach(el => {
@@ -1230,9 +1236,11 @@
                     renderTagSetSelector();
                     drawChart();
                 } else {
-                    // 首次使用，创建默认标签系统
-                    const id = 'set_' + Date.now();
-                    tagSets = { 'default': { name: '默认标签', tags: [] } };
+                    // 首次使用，创建默认分类
+                    tagSets = {
+                        'default': { name: '默认', color: '#3b82f6', expanded: true, tags: [] },
+                        'default2': { name: '分类二', color: '#10b981', expanded: true, tags: [] },
+                    };
                     activeTagSetId = 'default';
                     saveTagsToStorage();
                 }
@@ -1257,8 +1265,11 @@
         }
 
         function addTagSet(name) {
+            const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#ec4899', '#06b6d4'];
+            const usedColors = Object.values(tagSets).map(s => s.color).filter(Boolean);
+            const color = colors.find(c => !usedColors.includes(c)) || '#6b7280';
             const id = 'set_' + Date.now();
-            tagSets[id] = { name: name, tags: [] };
+            tagSets[id] = { name: name, color: color, expanded: true, tags: [] };
             switchTagSet(id);
             renderSettingsTagSets();
         }
@@ -1394,17 +1405,39 @@
             });
         }
 
-        // 渲染标签系统选择器（标题栏）
+        // 渲染父标签选择器（彩色胶囊）
         function renderTagSetSelector() {
             const container = document.getElementById('tagSetSelector');
             if (!container) return;
             const ids = Object.keys(tagSets);
-            container.innerHTML = ids.map(id =>
-                `<span style="font-size:10px;padding:1px 6px;border:1px solid ${id === activeTagSetId ? '#58a6ff' : '#30363d'};border-radius:8px;color:${id === activeTagSetId ? '#58a6ff' : '#8b949e'};cursor:pointer" class="tag-set-btn" data-id="${id}">${tagSets[id].name}</span>`
-            ).join('');
+            // 父标签胶囊
+            let html = ids.map(id => {
+                const ts = tagSets[id];
+                const isActive = id === activeTagSetId;
+                const bg = isActive ? (ts.color || '#3b82f6') : '#21262d';
+                const txt = isActive ? '#fff' : '#8b949e';
+                return `<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:12px;font-size:11px;background:${bg};color:${txt};cursor:pointer;${isActive ? '' : 'border:1px solid #30363d'}" class="tag-set-btn" data-id="${id}">${ts.name}</span>`;
+            }).join('');
+            // "添加分类"入口
+            html += `<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:2px;padding:3px 8px;border-radius:12px;font-size:11px;color:#484f58;cursor:pointer;border:1px dashed #30363d" id="addCategoryBtn">＋添加分类</span>`;
+            container.innerHTML = html;
             container.querySelectorAll('.tag-set-btn').forEach(el => {
                 el.addEventListener('click', () => switchTagSet(el.dataset.id));
             });
+            const addBtn = document.getElementById('addCategoryBtn');
+            if (addBtn) {
+                addBtn.addEventListener('click', () => {
+                    const name = prompt('请输入分类名称：', '新分类');
+                    if (name && name.trim()) {
+                        addTagSet(name.trim());
+                    }
+                });
+            }
+            // 更新当前分类名称
+            const label = document.getElementById('tagSetNameLabel');
+            if (label && tagSets[activeTagSetId]) {
+                label.textContent = '📂 ' + tagSets[activeTagSetId].name;
+            }
         }
 
         // 渲染设置页中的标签系统管理
@@ -1412,14 +1445,17 @@
             const container = document.getElementById('settingsTagSets');
             if (!container) return;
             const ids = Object.keys(tagSets);
-            container.innerHTML = ids.map(id =>
-                `<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid #21262d;font-size:11px">
-                    <span style="color:${id === activeTagSetId ? '#58a6ff' : '#8b949e'};font-weight:bold">●</span>
-                    <input type="text" value="${tagSets[id].name}" maxlength="15" data-id="${id}" style="flex:1;padding:2px 4px;border:1px solid #30363d;border-radius:4px;background:#0d1117;color:#e6edf3;font-size:11px;outline:none">
-                    <button class="tagset-rename" data-id="${id}" style="padding:2px 6px;border:none;border-radius:4px;background:#1f6feb;color:#fff;font-size:9px;cursor:pointer">重命名</button>
-                    <span class="tagset-del" data-id="${id}" style="color:#f85149;cursor:pointer;font-size:13px;${ids.length <= 1 ? 'display:none' : ''}">✕</span>
-                </div>`
-            ).join('');
+            container.innerHTML = ids.map(id => {
+                const ts = tagSets[id];
+                const isActive = id === activeTagSetId;
+                return `<div style="display:flex;align-items:center;gap:3px;padding:3px 0;border-bottom:1px solid #21262d;font-size:11px">
+                    <span style="width:12px;height:12px;border-radius:50%;background:${ts.color || '#3b82f6'};flex-shrink:0"></span>
+                    <input type="text" value="${ts.name}" maxlength="12" data-id="${id}" style="flex:1;padding:2px 4px;border:1px solid #30363d;border-radius:4px;background:#0d1117;color:#e6edf3;font-size:11px;outline:none;min-width:0">
+                    <span class="tagset-color" data-id="${id}" style="font-size:10px;color:#8b949e;cursor:pointer">🎨</span>
+                    <button class="tagset-rename" data-id="${id}" style="padding:1px 5px;border:none;border-radius:4px;background:#1f6feb;color:#fff;font-size:9px;cursor:pointer">√</button>
+                    <span class="tagset-del" data-id="${id}" style="color:#f85149;cursor:pointer;font-size:12px;${ids.length <= 1 ? 'display:none' : ''}">✕</span>
+                </div>`;
+            }).join('');
             container.querySelectorAll('.tagset-rename').forEach(el => {
                 el.addEventListener('click', () => {
                     const input = el.parentElement.querySelector('input');
@@ -1428,6 +1464,20 @@
             });
             container.querySelectorAll('.tagset-del').forEach(el => {
                 el.addEventListener('click', () => deleteTagSet(el.dataset.id));
+            });
+            container.querySelectorAll('.tagset-color').forEach(el => {
+                el.addEventListener('click', () => {
+                    const colors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444','#ec4899','#06b6d4','#6b7280'];
+                    const cur = tagSets[el.dataset.id]?.color || '#3b82f6';
+                    const next = colors[(colors.indexOf(cur) + 1) % colors.length];
+                    if (tagSets[el.dataset.id]) {
+                        tagSets[el.dataset.id].color = next;
+                        saveTagsToStorage();
+                        renderTagSetSelector();
+                        renderSettingsTagSets();
+                        drawChart();
+                    }
+                });
             });
         }
 
@@ -1739,6 +1789,17 @@
         });
         document.getElementById('tagSetNameInput').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') document.getElementById('tagSetAddBtn').click();
+        });
+        // 添加子标签（快捷入口）
+        document.getElementById('addChildTagBtn').addEventListener('click', () => {
+            // 切换到单根标签模式并给提示
+            if (mode !== 'single' && mode !== 'multi') {
+                setMode('single');
+            }
+            // 提示用户点击K线添加
+            const hint = document.getElementById('modeHint');
+            hint.textContent = '🏷 点击K线添加子标签到「' + (tagSets[activeTagSetId]?.name || '') + '」';
+            hint.className = 'mode-hint active-label';
         });
 
         // ============================================================
