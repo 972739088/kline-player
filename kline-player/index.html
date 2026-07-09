@@ -471,6 +471,17 @@
                 <button id="presetAddBtn" style="padding:6px 12px;border:none;border-radius:6px;background:#1f6feb;color:#fff;font-size:12px;cursor:pointer">添加</button>
             </div>
 
+            <div style="margin:12px 0 8px;font-size:13px;color:#f0f6fc">📊 CSV数据导入</div>
+            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">支持格式：日期,开盘,最高,最低,收盘</div>
+            <textarea id="csvInput" placeholder="粘贴CSV数据，或选择文件导入&#10;格式示例：&#10;date,open,high,low,close&#10;2024-01-01,100,102,99,101" style="width:100%;height:80px;padding:6px 8px;border:1px solid #30363d;border-radius:6px;background:#0d1117;color:#e6edf3;font-size:11px;outline:none;resize:vertical;font-family:monospace"></textarea>
+            <div style="display:flex;gap:6px;margin:6px 0 12px">
+                <label for="csvFile" style="flex:1;padding:6px 0;text-align:center;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;font-size:11px;cursor:pointer">📁 选择文件</label>
+                <input type="file" id="csvFile" accept=".csv" style="display:none">
+                <button id="csvImportBtn" style="flex:1;padding:6px 0;border:none;border-radius:6px;background:#1f6feb;color:#fff;font-size:11px;cursor:pointer">导入CSV</button>
+                <button id="csvResetBtn" style="padding:6px 10px;border:none;border-radius:6px;background:#21262d;color:#8b949e;font-size:11px;cursor:pointer">↺ 恢复默认</button>
+            </div>
+            <div id="csvStatus" style="font-size:10px;color:#8b949e;margin-bottom:8px;min-height:14px"></div>
+
             <div style="margin:12px 0 8px;font-size:13px;color:#f0f6fc">📌 标签管理</div>
             <div id="settingsTagList" style="max-height:150px;overflow-y:auto;margin-bottom:8px"></div>
 
@@ -509,7 +520,7 @@
         // ============================================================
         //  2. 全局状态
         // ============================================================
-        const klineData = generateKlineData(200);
+        let klineData = generateKlineData(200);
         let currentIndex = -1;          // 当前播放到的索引，-1 表示未开始
         let isPlaying = false;
         let playSpeed = 1;
@@ -1450,6 +1461,142 @@
         });
         document.getElementById('presetInput').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') document.getElementById('presetAddBtn').click();
+        });
+
+        // ============================================================
+        //  6c. CSV 数据导入
+        // ============================================================
+        let originalKlineData = null; // 保存原始模拟数据以便恢复
+
+        function parseCSV(text) {
+            const lines = text.trim().split('\n').filter(l => l.trim());
+            if (lines.length < 2) { throw new Error('数据不足，至少需要标题行+1行数据'); }
+
+            // 解析表头，查找各列位置
+            const header = lines[0].toLowerCase().split(',').map(h => h.trim());
+            const findCol = (names) => {
+                for (const name of names) {
+                    const idx = header.indexOf(name);
+                    if (idx >= 0) return idx;
+                }
+                return -1;
+            };
+
+            const dateIdx = findCol(['date', '时间', '日期', 'time', 'datetime', 'timestamp']);
+            const openIdx = findCol(['open', '开盘', '开盘价', 'o']);
+            const highIdx = findCol(['high', '最高', '最高价', 'h']);
+            const lowIdx = findCol(['low', '最低', '最低价', 'l']);
+            const closeIdx = findCol(['close', '收盘', '收盘价', 'c']);
+
+            if (openIdx < 0 || closeIdx < 0 || highIdx < 0 || lowIdx < 0) {
+                throw new Error('找不到必要的列：open/high/low/close，请检查表头名称');
+            }
+
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',').map(c => c.trim());
+                if (cols.length < Math.max(openIdx, closeIdx, highIdx, lowIdx) + 1) continue;
+
+                const open = parseFloat(cols[openIdx]);
+                const high = parseFloat(cols[highIdx]);
+                const low = parseFloat(cols[lowIdx]);
+                const close = parseFloat(cols[closeIdx]);
+                if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close)) continue;
+
+                let date = '';
+                if (dateIdx >= 0) {
+                    date = cols[dateIdx].replace(/["']/g, '').slice(0, 10);
+                } else {
+                    date = 'D' + (i - 1);
+                }
+
+                data.push({
+                    index: data.length,
+                    date: date,
+                    open, close, high, low,
+                });
+            }
+
+            if (data.length < 2) {
+                throw new Error('有效数据不足2条，请检查数据格式');
+            }
+            return data;
+        }
+
+        function importCSVData(newData) {
+            // 保存原始数据（仅第一次）
+            if (!originalKlineData) {
+                originalKlineData = klineData;
+            }
+            // 替换数据
+            klineData.length = 0;
+            klineData.push(...newData);
+            // 重置播放状态
+            stopPlay();
+            currentIndex = -1;
+            viewOffset = 0;
+            tags = [];
+            renderTagList();
+            saveTagsToStorage();
+            // 更新UI
+            document.getElementById('totalIdxLabel').textContent = klineData.length;
+            document.getElementById('csvStatus').textContent = '✅ 导入成功：' + klineData.length + ' 条K线数据';
+            document.getElementById('csvStatus').style.color = '#3fb950';
+            drawChart();
+        }
+
+        // 文件选择
+        document.getElementById('csvFile').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                document.getElementById('csvInput').value = ev.target.result;
+                document.getElementById('csvStatus').textContent = '📂 已读取文件：' + file.name + '，点击"导入CSV"开始导入';
+                document.getElementById('csvStatus').style.color = '#8b949e';
+            };
+            reader.readAsText(file);
+        });
+
+        // 导入按钮
+        document.getElementById('csvImportBtn').addEventListener('click', () => {
+            const text = document.getElementById('csvInput').value.trim();
+            if (!text) {
+                document.getElementById('csvStatus').textContent = '⚠️ 请先粘贴CSV数据或选择文件';
+                document.getElementById('csvStatus').style.color = '#f85149';
+                return;
+            }
+            try {
+                const data = parseCSV(text);
+                importCSVData(data);
+            } catch (err) {
+                document.getElementById('csvStatus').textContent = '❌ ' + err.message;
+                document.getElementById('csvStatus').style.color = '#f85149';
+            }
+        });
+
+        // 恢复默认数据
+        document.getElementById('csvResetBtn').addEventListener('click', () => {
+            if (originalKlineData) {
+                klineData.length = 0;
+                klineData.push(...originalKlineData);
+            } else {
+                // 重新生成
+                const temp = generateKlineData(200);
+                klineData.length = 0;
+                klineData.push(...temp);
+            }
+            stopPlay();
+            currentIndex = -1;
+            viewOffset = 0;
+            tags = [];
+            renderTagList();
+            saveTagsToStorage();
+            document.getElementById('totalIdxLabel').textContent = klineData.length;
+            document.getElementById('csvInput').value = '';
+            document.getElementById('csvStatus').textContent = '↺ 已恢复为默认模拟数据（200条）';
+            document.getElementById('csvStatus').style.color = '#8b949e';
+            drawChart();
         });
 
         // ============================================================
