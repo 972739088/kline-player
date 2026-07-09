@@ -639,34 +639,50 @@
 
             const drawStartX = pad.left;
 
-            // ---- 绘制多根标签的红色框（先绘制，在K线底层） ----
+            // ---- 绘制多根标签的红色框（以实际K线价格范围确定高度） ----
             const multiTags = tags.filter(t => t.type === 'multi');
             for (const tag of multiTags) {
                 const ts = Math.max(tag.start, startIdx);
                 const te = Math.min(tag.end, endIdx);
                 if (ts > te) continue;
+                // 计算所选K线范围内的最高价和最低价
+                let rangeHigh = -Infinity, rangeLow = Infinity;
+                for (let i = ts; i <= te; i++) {
+                    const d = klineData[i];
+                    if (d.high > rangeHigh) rangeHigh = d.high;
+                    if (d.low < rangeLow) rangeLow = d.low;
+                }
+                // 在价格区间上下留一点边距
+                const rangePad = (rangeHigh - rangeLow) * 0.05 || 0.5;
+                rangeHigh += rangePad;
+                rangeLow -= rangePad;
+                // 计算Y坐标：最高价在上方(Y小)，最低价在下方(Y大)
+                const boxTopY = pad.top + (1 - (rangeHigh - priceMin) / priceRange) * chartH;
+                const boxBottomY = pad.top + (1 - (rangeLow - priceMin) / priceRange) * chartH;
+                const boxH = Math.max(4, boxBottomY - boxTopY);
+
                 const x1 = drawStartX + (ts - startIdx) * totalStep - 1;
                 const x2 = drawStartX + (te - startIdx) * totalStep + candleW + 1;
                 // 红色半透明背景
                 ctx.fillStyle = multiTagColor + '12';
-                ctx.fillRect(x1, pad.top, x2 - x1, chartH);
+                ctx.fillRect(x1, boxTopY, x2 - x1, boxH);
                 // 红色虚线边框
                 ctx.strokeStyle = multiTagColor + 'cc';
                 ctx.lineWidth = 1.5;
                 ctx.setLineDash([5, 4]);
-                ctx.strokeRect(x1, pad.top, x2 - x1, chartH);
+                ctx.strokeRect(x1, boxTopY, x2 - x1, boxH);
                 ctx.setLineDash([]);
                 // 标签文字（框上方，带引线）
                 const labelCX = (x1 + x2) / 2;
                 const labelTW = ctx.measureText('📌 ' + tag.text).width + 16;
                 const labelTX = Math.max(pad.left, Math.min(w - pad.right - labelTW, labelCX - labelTW / 2));
-                // 引线
+                // 引线：从标签连接到框顶部
                 ctx.strokeStyle = multiTagColor + '66';
                 ctx.lineWidth = 1;
                 ctx.setLineDash([3, 3]);
                 ctx.beginPath();
-                ctx.moveTo(labelCX, pad.top - 4);
-                ctx.lineTo(labelCX, pad.top - 20);
+                ctx.moveTo(labelCX, boxTopY - 4);
+                ctx.lineTo(labelCX, boxTopY - 20);
                 ctx.stroke();
                 ctx.setLineDash([]);
                 // 标签背景
@@ -674,7 +690,7 @@
                 ctx.strokeStyle = multiTagColor + 'b3';
                 ctx.lineWidth = 1;
                 const tr = 4;
-                const lx = labelTX, rx = labelTX + labelTW, ty = pad.top - 38, by = pad.top - 20;
+                const lx = labelTX, rx = labelTX + labelTW, ty = boxTopY - 38, by = boxTopY - 20;
                 ctx.beginPath();
                 ctx.moveTo(lx + tr, ty);
                 ctx.lineTo(rx - tr, ty);
