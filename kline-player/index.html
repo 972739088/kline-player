@@ -1425,8 +1425,19 @@
             isDraggingChart = false;
         });
 
-        // 兼容 click 事件（用于模拟点击和fallback）
+        // 兼容 click 事件（先检查删除按钮，再处理其他点击）
         canvas.addEventListener('click', (e) => {
+            // 不管是否拖拽过，删除按钮点击始终响应
+            const rect = canvas.getBoundingClientRect();
+            const cx2 = e.clientX - rect.left;
+            const cy2 = e.clientY - rect.top;
+            for (const dr of tagDeleteRects) {
+                if (cx2 >= dr.x && cx2 <= dr.x + dr.w && cy2 >= dr.y && cy2 <= dr.y + dr.h) {
+                    deleteTagAction(dr.id);
+                    return;
+                }
+            }
+            // 非删除点击，受拖拽状态控制
             if (!chartTapMoved) {
                 handleCanvasTap(e.clientX, e.clientY);
             }
@@ -1459,8 +1470,20 @@
 
         canvas.addEventListener('touchend', (e) => {
             isDraggingChart = false;
-            if (!chartTapMoved) {
-                const touch = e.changedTouches[0];
+            const touch = e.changedTouches[0];
+            // 删除按钮始终响应
+            const rect = canvas.getBoundingClientRect();
+            const cx2 = touch.clientX - rect.left;
+            const cy2 = touch.clientY - rect.top;
+            let hitDelete = false;
+            for (const dr of tagDeleteRects) {
+                if (cx2 >= dr.x && cx2 <= dr.x + dr.w && cy2 >= dr.y && cy2 <= dr.y + dr.h) {
+                    deleteTagAction(dr.id);
+                    hitDelete = true;
+                    break;
+                }
+            }
+            if (!hitDelete && !chartTapMoved) {
                 handleCanvasTap(touch.clientX, touch.clientY);
             }
         });
