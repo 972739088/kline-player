@@ -542,10 +542,10 @@
             if (h < 10) {
                 const headerH = document.querySelector('.header')?.offsetHeight || 44;
                 const modeBarH = document.querySelector('.mode-bar')?.offsetHeight || 36;
-                const bottomH = document.querySelector('.bottom-area')?.offsetHeight || 120;
-                h = window.innerHeight - headerH - modeBarH - bottomH;
-                w = window.innerWidth;
-                if (h < 50) h = 300;
+                const bottomH = document.querySelector('.bottom-area')?.offsetHeight || 140;
+                h = (window.innerHeight || screen.height || 700) - headerH - modeBarH - bottomH;
+                w = window.innerWidth || screen.width || 375;
+                if (h < 50) h = 350;
             }
             const dpr = window.devicePixelRatio || 1;
             canvas.width = w * dpr;
@@ -617,7 +617,23 @@
         // ============================================================
         function drawChart() {
             const rect = container.getBoundingClientRect();
-            const w = rect.width, h = rect.height;
+            let w = rect.width, h = rect.height;
+            // WebView兼容：容器高度为0时使用后备方案
+            if (h < 10) {
+                const headerH = document.querySelector('.header')?.offsetHeight || 44;
+                const modeBarH = document.querySelector('.mode-bar')?.offsetHeight || 36;
+                const bottomH = document.querySelector('.bottom-area')?.offsetHeight || 140;
+                h = (window.innerHeight || screen.height || 700) - headerH - modeBarH - bottomH;
+                w = window.innerWidth || screen.width || 375;
+                if (h < 50) h = 350;
+                // 同步更新canvas尺寸
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = w * dpr;
+                canvas.height = h * dpr;
+                canvas.style.width = w + 'px';
+                canvas.style.height = h + 'px';
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
             if (w < 10 || h < 10) return;
 
             ctx.clearRect(0, 0, w, h);
@@ -1281,45 +1297,80 @@
         }
 
         // 鼠标点击（区分点击与拖拽）
-        let pointerDownTime = 0;
-        let pointerMoved = false;
+        let chartTapStartX = 0;
+        let chartTapStartY = 0;
+        let chartTapMoved = false;
 
-        canvas.addEventListener('pointerdown', (e) => {
-            pointerDownTime = Date.now();
-            pointerMoved = false;
+        canvas.addEventListener('mousedown', (e) => {
+            chartTapStartX = e.clientX;
+            chartTapStartY = e.clientY;
+            chartTapMoved = false;
             isDraggingChart = true;
             dragStartX = e.clientX;
             dragStartOffset = viewOffset;
-            canvas.setPointerCapture(e.pointerId);
         });
 
-        canvas.addEventListener('pointermove', (e) => {
+        canvas.addEventListener('mousemove', (e) => {
             if (!isDraggingChart) return;
             const dx = e.clientX - dragStartX;
-            // 每移动30像素偏移1根K线
             const totalStep = layout.totalStep || 10;
-            const threshold = totalStep * 1.5;
-            if (Math.abs(dx) > threshold) {
-                pointerMoved = true;
+            if (Math.abs(dx) > totalStep * 1.5) {
+                chartTapMoved = true;
                 const offsetDelta = -Math.round(dx / totalStep);
-                viewOffset = Math.max(
-                    -(klineData.length - 1),
-                    Math.min(klineData.length - 1, dragStartOffset + offsetDelta)
-                );
+                viewOffset = Math.max(-(klineData.length - 1), Math.min(klineData.length - 1, dragStartOffset + offsetDelta));
                 drawChart();
             }
         });
 
-        canvas.addEventListener('pointerup', (e) => {
+        canvas.addEventListener('mouseup', (e) => {
             isDraggingChart = false;
-            // 如果没移动，当作点击处理
-            if (!pointerMoved) {
+            if (!chartTapMoved) {
                 handleCanvasTap(e.clientX, e.clientY);
             }
         });
 
-        canvas.addEventListener('pointercancel', () => {
+        canvas.addEventListener('mouseleave', () => {
             isDraggingChart = false;
+        });
+
+        // 兼容 click 事件（用于模拟点击和fallback）
+        canvas.addEventListener('click', (e) => {
+            if (!chartTapMoved) {
+                handleCanvasTap(e.clientX, e.clientY);
+            }
+        });
+
+        // 触摸拖拽
+        canvas.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            chartTapStartX = touch.clientX;
+            chartTapStartY = touch.clientY;
+            chartTapMoved = false;
+            isDraggingChart = true;
+            dragStartX = touch.clientX;
+            dragStartOffset = viewOffset;
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isDraggingChart) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            const dx = touch.clientX - dragStartX;
+            const totalStep = layout.totalStep || 10;
+            if (Math.abs(dx) > totalStep * 1.5) {
+                chartTapMoved = true;
+                const offsetDelta = -Math.round(dx / totalStep);
+                viewOffset = Math.max(-(klineData.length - 1), Math.min(klineData.length - 1, dragStartOffset + offsetDelta));
+                drawChart();
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', (e) => {
+            isDraggingChart = false;
+            if (!chartTapMoved) {
+                const touch = e.changedTouches[0];
+                handleCanvasTap(touch.clientX, touch.clientY);
+            }
         });
 
         // ============================================================
