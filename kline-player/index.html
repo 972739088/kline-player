@@ -518,6 +518,10 @@
         let tags = [];                  // { id, type, start, end, text }
         let multiStartIndex = -1;       // 多根标签模式下的起始索引
         let pendingTag = null;          // { type, start, end }
+        let viewOffset = 0;             // 视图偏移量（拖动时用）,正数=向左偏移（看更早的数据）
+        let isDraggingChart = false;    // 是否正在拖拽图表
+        let dragStartX = 0;             // 拖拽起始X坐标
+        let dragStartOffset = 0;        // 拖拽起始时的viewOffset
 
         // Canvas
         const canvas = document.getElementById('klineCanvas');
@@ -561,8 +565,22 @@
             // 根据宽度决定可见K线数量
             const visibleCount = Math.max(8, Math.floor((w - pad.left - pad.right) / 4));
 
-            const endIdx = currentIndex >= 0 ? currentIndex : 0;
-            const startIdx = Math.max(0, endIdx - visibleCount + 1);
+            // 计算视图的起始和结束索引（支持拖拽偏移）
+            let endIdx, startIdx;
+            if (currentIndex < 0) {
+                endIdx = 0;
+                startIdx = 0;
+            } else {
+                // 默认以 currentIndex 为右边界，左移 visibleCount 根
+                // viewOffset 为正时向左偏移（查看更早的数据），为负时向右偏移
+                const baseEnd = currentIndex;
+                const shiftedEnd = baseEnd + viewOffset;
+                endIdx = Math.min(klineData.length - 1, Math.max(visibleCount - 1, shiftedEnd));
+                startIdx = Math.max(0, endIdx - visibleCount + 1);
+                // 如果到头了，修正 endIdx
+                endIdx = Math.min(klineData.length - 1, startIdx + visibleCount - 1);
+            }
+
             const chartW = w - pad.left - pad.right;
             const totalStep = visibleCount > 0 ? chartW / visibleCount : 4;
             const candleW = Math.max(2, totalStep - 1.5);
@@ -723,15 +741,19 @@
                 const d = klineData[i];
                 const x = drawStartX + (i - startIdx) * totalStep;
                 const isUp = d.close >= d.open;
+                const isPlayed = currentIndex >= 0 && i <= currentIndex;
 
                 const yHigh = pad.top + (1 - (d.high - priceMin) / priceRange) * chartH;
                 const yLow = pad.top + (1 - (d.low - priceMin) / priceRange) * chartH;
                 const yOpen = pad.top + (1 - (d.open - priceMin) / priceRange) * chartH;
                 const yClose = pad.top + (1 - (d.close - priceMin) / priceRange) * chartH;
 
+                // 已播放的K线用正常颜色，未播放的用半透明（锁定效果）
+                const alpha = isPlayed ? 1 : 0.35;
                 const color = isUp ? '#f85149' : '#3fb950';
-                ctx.strokeStyle = color;
-                ctx.fillStyle = color;
+                const fillColor = isUp ? color : (isPlayed ? color : 'rgba(63,185,80,0.35)');
+                ctx.strokeStyle = color + (isPlayed ? '' : '59');
+                ctx.fillStyle = fillColor;
                 ctx.lineWidth = 1;
 
                 const midX = x + candleW / 2;
@@ -830,6 +852,28 @@
                 ctx.fillText('#' + idx, finalLabelX + labelW + 3, labelY + labelH / 2);
             }
 
+            // ---- 已播/未播锁定分界线 ----
+            if (currentIndex >= startIdx && currentIndex < endIdx && currentIndex < klineData.length - 1) {
+                const lineX = drawStartX + (currentIndex - startIdx) * totalStep + candleW + 2;
+                ctx.strokeStyle = 'rgba(88, 166, 255, 0.25)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.moveTo(lineX, pad.top);
+                ctx.lineTo(lineX, pad.top + chartH);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                // 标签
+                ctx.fillStyle = 'rgba(88, 166, 255, 0.4)';
+                ctx.font = '9px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('🔒 已播', lineX, pad.top + 12);
+                ctx.textAlign = 'right';
+                ctx.fillText('未播', lineX - 4, pad.top + chartH - 4);
+                ctx.textAlign = 'left';
+                ctx.fillText('已播', lineX + 4, pad.top + chartH - 4);
+            }
+
             // ---- 当前播放位置指示 ----
             if (currentIndex >= startIdx && currentIndex <= endIdx) {
                 const x = drawStartX + (currentIndex - startIdx) * totalStep;
@@ -880,6 +924,8 @@
                 currentIndex = -1;
                 drawChart();
             }
+            // 开始播放时重置视图偏移，自动跟随播放进度
+            viewOffset = 0;
             isPlaying = true;
             document.getElementById('btnPlay').textContent = '⏸';
             const interval = Math.max(40, Math.floor(200 / playSpeed));
@@ -909,12 +955,14 @@
         function goToStart() {
             stopPlay();
             currentIndex = -1;
+            viewOffset = 0;
             drawChart();
         }
 
         function goToEnd() {
             stopPlay();
             currentIndex = klineData.length - 1;
+            viewOffset = 0;
             drawChart();
         }
 
@@ -1205,6 +1253,7 @@
                 // 播放模式下点击跳转位置
                 stopPlay();
                 currentIndex = idx;
+                viewOffset = 0;
                 drawChart();
                 return;
             }
@@ -1231,17 +1280,47 @@
             }
         }
 
-        // 鼠标点击
-        canvas.addEventListener('click', (e) => {
-            handleCanvasTap(e.clientX, e.clientY);
+        // 鼠标点击（区分点击与拖拽）
+        let pointerDownTime = 0;
+        let pointerMoved = false;
+
+        canvas.addEventListener('pointerdown', (e) => {
+            pointerDownTime = Date.now();
+            pointerMoved = false;
+            isDraggingChart = true;
+            dragStartX = e.clientX;
+            dragStartOffset = viewOffset;
+            canvas.setPointerCapture(e.pointerId);
         });
 
-        // 触摸
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const touch = e.touches[0];
-            handleCanvasTap(touch.clientX, touch.clientY);
-        }, { passive: false });
+        canvas.addEventListener('pointermove', (e) => {
+            if (!isDraggingChart) return;
+            const dx = e.clientX - dragStartX;
+            // 每移动30像素偏移1根K线
+            const totalStep = layout.totalStep || 10;
+            const threshold = totalStep * 1.5;
+            if (Math.abs(dx) > threshold) {
+                pointerMoved = true;
+                const offsetDelta = -Math.round(dx / totalStep);
+                viewOffset = Math.max(
+                    -(klineData.length - 1),
+                    Math.min(klineData.length - 1, dragStartOffset + offsetDelta)
+                );
+                drawChart();
+            }
+        });
+
+        canvas.addEventListener('pointerup', (e) => {
+            isDraggingChart = false;
+            // 如果没移动，当作点击处理
+            if (!pointerMoved) {
+                handleCanvasTap(e.clientX, e.clientY);
+            }
+        });
+
+        canvas.addEventListener('pointercancel', () => {
+            isDraggingChart = false;
+        });
 
         // ============================================================
         //  8. 进度条拖拽
@@ -1281,11 +1360,12 @@
         function setMode(newMode) {
             mode = newMode;
             multiStartIndex = -1;
+            viewOffset = 0; // 切换模式时重置视图
             document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
             const hint = document.getElementById('modeHint');
             if (newMode === 'play') {
                 document.getElementById('modePlay').classList.add('active');
-                hint.textContent = '▶ 播放模式 · 点击K线跳转';
+                hint.textContent = '▶ 播放模式 · 拖拽平移 · 点击跳转';
                 hint.className = 'mode-hint';
             } else if (newMode === 'single') {
                 document.getElementById('modeSingle').classList.add('active');
