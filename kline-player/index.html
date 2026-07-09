@@ -461,7 +461,8 @@
             <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
                 <div style="font-size:11px;color:#8b949e;width:100%;margin-bottom:4px">单根标签颜色：</div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap" id="singleColorOptions">
-                    <span class="color-opt active" data-color="#f0883e" style="background:#f0883e;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                    <span class="color-opt active" data-color="#ffffff" style="background:#ffffff;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid #888;display:inline-block"></span>
+                    <span class="color-opt" data-color="#f0883e" style="background:#f0883e;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
                     <span class="color-opt" data-color="#58a6ff" style="background:#58a6ff;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
                     <span class="color-opt" data-color="#3fb950" style="background:#3fb950;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
                     <span class="color-opt" data-color="#f85149" style="background:#f85149;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
@@ -783,10 +784,11 @@
                 ctx.setLineDash([]);
                 // 标签文字（框上方，胶囊+斜体+透明度+可删除）
                 const labelCX = (x1 + x2) / 2;
-                const mText = '📌 ' + tag.text;
-                const textW2 = ctx.measureText(mText).width;
-                const mLabelW = textW2 + 28;
+                const mText = tag.text;
+                const textW2 = ctx.measureText('● ' + mText).width;
+                const mLabelW = textW2 + 34;
                 const mLabelTX = Math.max(pad.left, Math.min(w - pad.right - mLabelW, labelCX - mLabelW / 2));
+                const malp = '99'; // 60%透明度
                 // 引线
                 ctx.strokeStyle = multiTagColor + '66';
                 ctx.lineWidth = 1;
@@ -799,8 +801,8 @@
                 // 胶囊背景
                 const mlH = 20;
                 const mlY = boxTopY - 20 - mlH;
-                ctx.fillStyle = multiTagColor + '1f';
-                ctx.strokeStyle = multiTagColor + 'BF';
+                ctx.fillStyle = multiTagColor + '0F';
+                ctx.strokeStyle = multiTagColor + malp;
                 ctx.lineWidth = 1;
                 const mr = mlH / 2;
                 const mlx = mLabelTX, mrx = mLabelTX + mLabelW, mty = mlY, mby = mlY + mlH;
@@ -817,18 +819,27 @@
                 ctx.closePath();
                 ctx.fill();
                 ctx.stroke();
-                // 文字（斜体，75%透明度）
-                ctx.fillStyle = multiTagColor + 'BF';
+                // 圆点（在文字前面）
+                const mDotX = mlx + 10;
+                const mDotY = (mty + mby) / 2;
+                ctx.fillStyle = multiTagColor + malp;
+                ctx.beginPath();
+                ctx.arc(mDotX, mDotY, 3, 0, Math.PI * 2);
+                ctx.fill();
+                // 文字（斜体，60%透明度）
+                ctx.fillStyle = multiTagColor + malp;
                 ctx.font = 'italic 11px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(mText, mDotX + 8, mDotY);
+                // 删除按钮（加大）
+                const mDelX = mrx - 22;
+                ctx.fillStyle = multiTagColor + '80';
+                ctx.font = '16px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(mText, labelCX, (mty + mby) / 2);
-                // 删除按钮
-                const mDelX = mrx - 16;
-                ctx.fillStyle = multiTagColor + '80';
-                ctx.font = '12px sans-serif';
-                ctx.fillText('✕', mDelX + 8, (mty + mby) / 2);
-                tagDeleteRects.push({ id: tag.id, x: mDelX, y: mty + 1, w: 16, h: mlH - 2 });
+                ctx.fillText('✕', mDelX + 11, mDotY);
+                tagDeleteRects.push({ id: tag.id, x: mDelX, y: mty, w: 22, h: mlH });
                 // 范围
                 ctx.fillStyle = multiTagColor + '80';
                 ctx.font = '9px sans-serif';
@@ -894,13 +905,14 @@
                 // 标签卡片
                 const labelH = 20;
                 const textW = ctx.measureText(tag.text).width;
-                const labelW = textW + 28; // 文字 + 删除按钮空间
+                const labelW = textW + 34; // 圆点 + 文字 + 删除按钮
                 const labelX = Math.max(pad.left, Math.min(w - pad.right - labelW, cx - labelW / 2));
                 const labelY = endY - 30 - labelH;
                 const col = singleTagColor;
+                const alp = '99'; // 60%透明度
 
-                // 引线（虚线，75%透明度）
-                ctx.strokeStyle = col + 'BF';
+                // 引线（虚线，60%透明度）
+                ctx.strokeStyle = col + alp;
                 ctx.lineWidth = 1;
                 ctx.setLineDash([3, 3]);
                 ctx.beginPath();
@@ -909,11 +921,11 @@
                 ctx.stroke();
                 ctx.setLineDash([]);
 
-                // 胶囊背景（75%透明度）
-                ctx.fillStyle = col + '26';
-                ctx.strokeStyle = col + 'BF';
+                // 胶囊背景（60%透明度）
+                ctx.fillStyle = col + '0F';
+                ctx.strokeStyle = col + alp;
                 ctx.lineWidth = 1;
-                const r = labelH / 2; // 全圆角=胶囊
+                const r = labelH / 2;
                 ctx.beginPath();
                 ctx.moveTo(labelX + r, labelY);
                 ctx.lineTo(labelX + labelW - r, labelY);
@@ -928,27 +940,32 @@
                 ctx.fill();
                 ctx.stroke();
 
-                // 标签文字（斜体，75%透明度）
-                ctx.fillStyle = col + 'BF';
+                // 圆点标记（在文字前面）
+                const dotX = labelX + 10;
+                const dotY = labelY + labelH / 2;
+                ctx.fillStyle = col + alp;
+                ctx.beginPath();
+                ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 标签文字（斜体，60%透明度）
+                ctx.fillStyle = col + alp;
                 ctx.font = 'italic 11px sans-serif';
-                ctx.textAlign = 'center';
+                ctx.textAlign = 'left';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(tag.text, labelX + textW / 2 + 4, labelY + labelH / 2);
+                ctx.fillText(tag.text, dotX + 8, dotY);
 
-                // 删除按钮 ✕（在胶囊右侧）
-                const delX = labelX + labelW - 16;
-                const delY = labelY + 1;
-                const delS = 16;
+                // 删除按钮 ✕（在胶囊右侧，加大）
+                const delX = labelX + labelW - 22;
                 ctx.fillStyle = col + '80';
-                ctx.font = '12px sans-serif';
+                ctx.font = '16px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText('✕', delX + delS / 2, labelY + labelH / 2);
-                // 记录删除按钮点击区域
-                tagDeleteRects.push({ id: tag.id, x: delX, y: delY, w: delS, h: labelH - 2 });
+                ctx.fillText('✕', delX + 11, dotY);
+                tagDeleteRects.push({ id: tag.id, x: delX, y: labelY, w: 22, h: labelH });
 
-                // 小圆点标记
-                ctx.fillStyle = col + 'BF';
+                // 小圆点标记在K线上方
+                ctx.fillStyle = col + alp;
                 ctx.beginPath();
                 ctx.arc(cx, endY - 4, 3, 0, Math.PI * 2);
                 ctx.fill();
@@ -1184,7 +1201,7 @@
         // ============================================================
         //  6b. 标签设置（颜色、预设文字）
         // ============================================================
-        let singleTagColor = localStorage.getItem('kline_single_color') || '#f0883e';
+        let singleTagColor = localStorage.getItem('kline_single_color') || '#ffffff';
         let multiTagColor = localStorage.getItem('kline_multi_color') || '#f85149';
         let presetTags = [];
 
