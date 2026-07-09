@@ -443,8 +443,10 @@
         <div class="tag-dialog">
             <h3 id="tagDialogTitle">添加标签</h3>
             <div class="tag-range-info" id="tagRangeInfo"></div>
-            <!-- 预设文字快速选择 -->
-            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px" id="presetTagContainer"></div>
+            <!-- 搜索预设 -->
+            <input type="text" id="presetSearch" placeholder="🔍 搜索预设文字..." maxlength="20" autocomplete="off" style="width:100%;padding:6px 10px;border:1px solid #30363d;border-radius:6px;background:#0d1117;color:#8b949e;font-size:11px;outline:none;margin-bottom:6px">
+            <!-- 预设文字快速选择（2列网格） -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:8px;max-height:120px;overflow-y:auto" id="presetTagContainer"></div>
             <input type="text" id="tagInput" placeholder="输入标签文字..." maxlength="30" autocomplete="off">
             <div class="tag-dialog-btns">
                 <button class="btn-cancel" id="tagCancel">取消</button>
@@ -1229,13 +1231,19 @@
             try { localStorage.setItem('kline_presets', JSON.stringify(presetTags)); } catch (e) {}
         }
 
-        // 渲染标签对话框中的预设按钮
+        // 渲染标签对话框中的预设按钮（2列网格+搜索过滤）
         function renderPresetButtons() {
             const container = document.getElementById('presetTagContainer');
             if (!container) return;
-            if (!presetTags.length) { container.innerHTML = ''; return; }
-            container.innerHTML = presetTags.map(t =>
-                `<span style="font-size:11px;padding:2px 8px;border:1px solid #30363d;border-radius:10px;color:#8b949e;cursor:pointer" class="preset-tag-btn">${t}</span>`
+            const searchText = (document.getElementById('presetSearch').value || '').trim().toLowerCase();
+            const filtered = searchText ? presetTags.filter(t => t.includes(searchText)) : presetTags;
+            if (!filtered.length) {
+                container.innerHTML = '<span style="font-size:10px;color:#484f58;grid-column:1/-1">' +
+                    (searchText ? '无匹配结果' : '暂无预设') + '</span>';
+                return;
+            }
+            container.innerHTML = filtered.map(t =>
+                `<span style="font-size:10px;padding:2px 6px;border:1px solid #30363d;border-radius:6px;color:#8b949e;cursor:pointer;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" class="preset-tag-btn">${t}</span>`
             ).join('');
             container.querySelectorAll('.preset-tag-btn').forEach(el => {
                 el.addEventListener('click', () => {
@@ -1582,6 +1590,8 @@
             if (e.key === 'Enter') confirmTagAction();
             if (e.key === 'Escape') closeTagDialog();
         });
+        // 搜索预设文字
+        document.getElementById('presetSearch').addEventListener('input', renderPresetButtons);
         document.getElementById('tagOverlay').addEventListener('click', (e) => {
             if (e.target === document.getElementById('tagOverlay')) closeTagDialog();
         });
