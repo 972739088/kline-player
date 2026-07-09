@@ -752,24 +752,22 @@
                 ctx.fillText('#' + tag.start + '~#' + tag.end + ' (' + (tag.end - tag.start + 1) + '根)', labelCX, by + 3);
             }
 
-            // ---- 绘制每根K线 ----
+            // ---- 绘制每根K线（只画已播放的） ----
             for (let i = startIdx; i <= endIdx && i < klineData.length; i++) {
+                if (i > currentIndex) continue; // 未播放的K线不显示
                 const d = klineData[i];
                 const x = drawStartX + (i - startIdx) * totalStep;
                 const isUp = d.close >= d.open;
-                const isPlayed = currentIndex >= 0 && i <= currentIndex;
 
                 const yHigh = pad.top + (1 - (d.high - priceMin) / priceRange) * chartH;
                 const yLow = pad.top + (1 - (d.low - priceMin) / priceRange) * chartH;
                 const yOpen = pad.top + (1 - (d.open - priceMin) / priceRange) * chartH;
                 const yClose = pad.top + (1 - (d.close - priceMin) / priceRange) * chartH;
 
-                // 已播放的K线用正常颜色，未播放的用半透明（锁定效果）
-                const alpha = isPlayed ? 1 : 0.35;
+                // 已播放的K线用正常颜色
                 const color = isUp ? '#f85149' : '#3fb950';
-                const fillColor = isUp ? color : (isPlayed ? color : 'rgba(63,185,80,0.35)');
-                ctx.strokeStyle = color + (isPlayed ? '' : '59');
-                ctx.fillStyle = fillColor;
+                ctx.strokeStyle = color;
+                ctx.fillStyle = color;
                 ctx.lineWidth = 1;
 
                 const midX = x + candleW / 2;
@@ -866,28 +864,6 @@
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'middle';
                 ctx.fillText('#' + idx, finalLabelX + labelW + 3, labelY + labelH / 2);
-            }
-
-            // ---- 已播/未播锁定分界线 ----
-            if (currentIndex >= startIdx && currentIndex < endIdx && currentIndex < klineData.length - 1) {
-                const lineX = drawStartX + (currentIndex - startIdx) * totalStep + candleW + 2;
-                ctx.strokeStyle = 'rgba(88, 166, 255, 0.25)';
-                ctx.lineWidth = 1.5;
-                ctx.setLineDash([4, 4]);
-                ctx.beginPath();
-                ctx.moveTo(lineX, pad.top);
-                ctx.lineTo(lineX, pad.top + chartH);
-                ctx.stroke();
-                ctx.setLineDash([]);
-                // 标签
-                ctx.fillStyle = 'rgba(88, 166, 255, 0.4)';
-                ctx.font = '9px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('🔒 已播', lineX, pad.top + 12);
-                ctx.textAlign = 'right';
-                ctx.fillText('未播', lineX - 4, pad.top + chartH - 4);
-                ctx.textAlign = 'left';
-                ctx.fillText('已播', lineX + 4, pad.top + chartH - 4);
             }
 
             // ---- 当前播放位置指示 ----
