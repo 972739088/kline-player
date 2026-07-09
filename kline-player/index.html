@@ -375,9 +375,10 @@
         <!-- 标题栏 -->
         <div class="header">
             <h1>📊 K线播放器</h1>
-            <div style="display:flex;align-items:center;gap:8px">
-                <span class="mode-hint" id="modeHint">▶ 播放模式</span>
-                <button id="btnSettings" style="background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;padding:2px 4px;">⚙️</button>
+            <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:10px;display:flex;gap:3px;flex-wrap:wrap;max-width:160px;overflow:hidden" id="tagSetSelector"></span>
+                <span class="mode-hint" id="modeHint">▶ 播放</span>
+                <button id="btnSettings" style="background:none;border:none;color:#8b949e;font-size:16px;cursor:pointer;padding:2px 4px;">⚙️</button>
             </div>
         </div>
 
@@ -501,7 +502,14 @@
             <div id="csvStatus" style="font-size:10px;color:#8b949e;margin-bottom:8px;min-height:14px"></div>
 
             <div style="margin:12px 0 8px;font-size:13px;color:#f0f6fc">📌 标签管理</div>
-            <div id="settingsTagList" style="max-height:150px;overflow-y:auto;margin-bottom:8px"></div>
+            <div id="settingsTagList" style="max-height:120px;overflow-y:auto;margin-bottom:8px"></div>
+
+            <div style="margin:12px 0 8px;font-size:13px;color:#f0f6fc">📂 标签系统</div>
+            <div id="settingsTagSets" style="max-height:120px;overflow-y:auto;margin-bottom:6px"></div>
+            <div style="display:flex;gap:6px;margin-bottom:8px">
+                <input type="text" id="tagSetNameInput" placeholder="新标签系统名称..." maxlength="15" style="flex:1;padding:5px 8px;border:1px solid #30363d;border-radius:6px;background:#0d1117;color:#e6edf3;font-size:11px;outline:none">
+                <button id="tagSetAddBtn" style="padding:5px 10px;border:none;border-radius:6px;background:#1f6feb;color:#fff;font-size:11px;cursor:pointer">＋新建</button>
+            </div>
 
             <div class="tag-dialog-btns">
                 <button class="btn-confirm" id="settingsClose" style="background:#21262d;color:#8b949e">关闭</button>
@@ -588,6 +596,8 @@
         let playTimer = null;
         let mode = 'play';              // 'play' | 'single' | 'multi'
         let tags = [];                  // { id, type, start, end, text }
+        let tagSets = {};               // 多套标签系统 { id: { name, tags } }
+        let activeTagSetId = 'default'; // 当前使用的标签系统ID
         let multiStartIndex = -1;       // 多根标签模式下的起始索引
         let pendingTag = null;          // { type, start, end }
         let viewOffset = 0;             // 视图偏移量（拖动时用）,正数=向左偏移（看更早的数据）
@@ -1192,22 +1202,88 @@
             });
         }
 
-        // localStorage 持久化
+        // localStorage 持久化（标签+标签系统）
         function saveTagsToStorage() {
             try {
-                localStorage.setItem('kline_tags', JSON.stringify(tags));
+                // 保存当前标签到当前标签系统
+                if (tagSets[activeTagSetId]) {
+                    tagSets[activeTagSetId].tags = tags.slice();
+                }
+                localStorage.setItem('kline_tagSets', JSON.stringify(tagSets));
+                localStorage.setItem('kline_activeSet', activeTagSetId);
             } catch (e) { /* ignore */ }
         }
 
         function loadTagsFromStorage() {
             try {
-                const saved = localStorage.getItem('kline_tags');
+                const saved = localStorage.getItem('kline_tagSets');
                 if (saved) {
-                    tags = JSON.parse(saved);
+                    tagSets = JSON.parse(saved);
+                    activeTagSetId = localStorage.getItem('kline_activeSet') || 'default';
+                    if (!tagSets[activeTagSetId]) {
+                        const ids = Object.keys(tagSets);
+                        activeTagSetId = ids.length > 0 ? ids[0] : 'default';
+                    }
+                    tags = tagSets[activeTagSetId] ? tagSets[activeTagSetId].tags.slice() : [];
                     renderTagList();
+                    renderTagSetSelector();
                     drawChart();
+                } else {
+                    // 首次使用，创建默认标签系统
+                    const id = 'set_' + Date.now();
+                    tagSets = { 'default': { name: '默认标签', tags: [] } };
+                    activeTagSetId = 'default';
+                    saveTagsToStorage();
                 }
             } catch (e) { /* ignore */ }
+        }
+
+        // 标签系统管理
+        function switchTagSet(id) {
+            if (id === activeTagSetId || !tagSets[id]) return;
+            // 保存当前标签到当前系统
+            if (tagSets[activeTagSetId]) tagSets[activeTagSetId].tags = tags.slice();
+            // 切换到新系统
+            activeTagSetId = id;
+            tags = tagSets[id].tags.slice();
+            stopPlay();
+            currentIndex = -1;
+            viewOffset = 0;
+            renderTagList();
+            renderTagSetSelector();
+            saveTagsToStorage();
+            drawChart();
+        }
+
+        function addTagSet(name) {
+            const id = 'set_' + Date.now();
+            tagSets[id] = { name: name, tags: [] };
+            switchTagSet(id);
+            renderSettingsTagSets();
+        }
+
+        function deleteTagSet(id) {
+            if (Object.keys(tagSets).length <= 1) return;
+            delete tagSets[id];
+            if (activeTagSetId === id) {
+                const ids = Object.keys(tagSets);
+                activeTagSetId = ids[0];
+                tags = tagSets[activeTagSetId].tags.slice();
+            }
+            saveTagsToStorage();
+            renderTagList();
+            renderTagSetSelector();
+            renderSettingsTagSets();
+            drawChart();
+        }
+
+        function renameTagSet(id, name) {
+            if (tagSets[id]) {
+                tagSets[id].name = name;
+                saveTagsToStorage();
+                renderTagSetSelector();
+                renderSettingsTagSets();
+            }
         }
 
         // ============================================================
@@ -1317,6 +1393,43 @@
             });
         }
 
+        // 渲染标签系统选择器（标题栏）
+        function renderTagSetSelector() {
+            const container = document.getElementById('tagSetSelector');
+            if (!container) return;
+            const ids = Object.keys(tagSets);
+            container.innerHTML = ids.map(id =>
+                `<span style="font-size:10px;padding:1px 6px;border:1px solid ${id === activeTagSetId ? '#58a6ff' : '#30363d'};border-radius:8px;color:${id === activeTagSetId ? '#58a6ff' : '#8b949e'};cursor:pointer" class="tag-set-btn" data-id="${id}">${tagSets[id].name}</span>`
+            ).join('');
+            container.querySelectorAll('.tag-set-btn').forEach(el => {
+                el.addEventListener('click', () => switchTagSet(el.dataset.id));
+            });
+        }
+
+        // 渲染设置页中的标签系统管理
+        function renderSettingsTagSets() {
+            const container = document.getElementById('settingsTagSets');
+            if (!container) return;
+            const ids = Object.keys(tagSets);
+            container.innerHTML = ids.map(id =>
+                `<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid #21262d;font-size:11px">
+                    <span style="color:${id === activeTagSetId ? '#58a6ff' : '#8b949e'};font-weight:bold">●</span>
+                    <input type="text" value="${tagSets[id].name}" maxlength="15" data-id="${id}" style="flex:1;padding:2px 4px;border:1px solid #30363d;border-radius:4px;background:#0d1117;color:#e6edf3;font-size:11px;outline:none">
+                    <button class="tagset-rename" data-id="${id}" style="padding:2px 6px;border:none;border-radius:4px;background:#1f6feb;color:#fff;font-size:9px;cursor:pointer">重命名</button>
+                    <span class="tagset-del" data-id="${id}" style="color:#f85149;cursor:pointer;font-size:13px;${ids.length <= 1 ? 'display:none' : ''}">✕</span>
+                </div>`
+            ).join('');
+            container.querySelectorAll('.tagset-rename').forEach(el => {
+                el.addEventListener('click', () => {
+                    const input = el.parentElement.querySelector('input');
+                    renameTagSet(el.dataset.id, input.value.trim() || '未命名');
+                });
+            });
+            container.querySelectorAll('.tagset-del').forEach(el => {
+                el.addEventListener('click', () => deleteTagSet(el.dataset.id));
+            });
+        }
+
         // 颜色选择器初始化
         function initColorPicker() {
             document.querySelectorAll('#singleColorOptions .color-opt').forEach(el => {
@@ -1350,6 +1463,7 @@
             document.getElementById('settingsOverlay').classList.add('show');
             renderSettingsPresets();
             renderSettingsTagList();
+            renderSettingsTagSets();
             initColorPicker();
         }
 
@@ -1615,6 +1729,15 @@
         });
         document.getElementById('presetInput').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') document.getElementById('presetAddBtn').click();
+        });
+        // 添加标签系统
+        document.getElementById('tagSetAddBtn').addEventListener('click', () => {
+            const name = document.getElementById('tagSetNameInput').value.trim() || '未命名';
+            addTagSet(name);
+            document.getElementById('tagSetNameInput').value = '';
+        });
+        document.getElementById('tagSetNameInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') document.getElementById('tagSetAddBtn').click();
         });
 
         // ============================================================
