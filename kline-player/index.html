@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>K线播放器</title>
+    <style>
+        /* ========== 全局重置 ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        /* ========== 顶部标题栏 ========== */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            height: 44px;
+            flex-shrink: 0;
+        }
+        .header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+        .header .mode-hint {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: #21262d;
+            color: #8b949e;
+            transition: all 0.3s;
+        }
+        .header .mode-hint.active-label {
+            background: #3d1f1f;
+            color: #f85149;
+        }
+
+        /* ========== 模式切换栏 ========== */
+        .mode-bar {
+            display: flex;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #161b22;
+            border-bottom: 1px solid #21262d;
+            flex-shrink: 0;
+        }
+        .mode-btn {
+            flex: 1;
+            padding: 6px 0;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            background: #0d1117;
+            color: #8b949e;
+            font-size: 12px;
+            font-weight: 500;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .mode-btn:active {
+            opacity: 0.7;
+        }
+        .mode-btn.active {
+            background: #1f6feb;
+            border-color: #1f6feb;
+            color: #ffffff;
+        }
+        .mode-btn.label-single.active,
+        .mode-btn.label-multi.active {
+            background: #da3633;
+            border-color: #da3633;
+        }
+
+        /* ========== Canvas 图表区域 ========== */
+        .chart-container {
+            position: relative;
+            flex: 1;
+            background: #0d1117;
+            min-height: 0;
+            overflow: hidden;
+        }
+        #klineCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        /* 标签输入弹窗 */
+        .tag-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .tag-overlay.show {
+            display: flex;
+        }
+        .tag-dialog {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 20px;
+            width: 85%;
+            max-width: 340px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            animation: dialogIn 0.2s ease;
+        }
+        @keyframes dialogIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        .tag-dialog h3 {
+            font-size: 15px;
+            margin-bottom: 4px;
+            color: #f0f6fc;
+        }
+        .tag-dialog .tag-range-info {
+            font-size: 12px;
+            color: #8b949e;
+            margin-bottom: 12px;
+        }
+        .tag-dialog input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            background: #0d1117;
+            color: #e6edf3;
+            font-size: 14px;
+            outline: none;
+            margin-bottom: 12px;
+        }
+        .tag-dialog input:focus {
+            border-color: #58a6ff;
+        }
+        .tag-dialog .tag-dialog-btns {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .tag-dialog .tag-dialog-btns button {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .tag-dialog .btn-cancel {
+            background: #21262d;
+            color: #8b949e;
+        }
+        .tag-dialog .btn-confirm {
+            background: #1f6feb;
+            color: #fff;
+        }
+
+        /* ========== 底部控制区 ========== */
+        .bottom-area {
+            background: #161b22;
+            border-top: 1px solid #21262d;
+            padding: 8px 12px 12px;
+            flex-shrink: 0;
+        }
+        /* 进度条 */
+        .progress-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .progress-wrap .idx-label {
+            font-size: 11px;
+            color: #8b949e;
+            min-width: 36px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+        .progress-track {
+            flex: 1;
+            height: 6px;
+            background: #21262d;
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+            touch-action: none;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #1f6feb, #58a6ff);
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.05s;
+            pointer-events: none;
+        }
+        .progress-thumb {
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 16px;
+            height: 16px;
+            background: #f0f6fc;
+            border: 2px solid #1f6feb;
+            border-radius: 50%;
+            pointer-events: none;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        }
+        /* 播放控制 */
+        .play-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 6px;
+        }
+        .play-controls button {
+            background: none;
+            border: none;
+            color: #e6edf3;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+        .play-controls button:active {
+            background: #21262d;
+        }
+        .play-controls .play-btn {
+            font-size: 24px;
+            width: 40px;
+            height: 40px;
+            background: #1f6feb;
+            border-radius: 50%;
+            color: #fff;
+        }
+        .play-controls .play-btn:active {
+            background: #388bfd;
+        }
+        .speed-btn {
+            font-size: 11px !important;
+            padding: 3px 8px !important;
+            border: 1px solid #30363d !important;
+            border-radius: 10px !important;
+            color: #8b949e !important;
+            min-width: 36px;
+            justify-content: center !important;
+        }
+        .speed-btn.active {
+            border-color: #58a6ff !important;
+            color: #58a6ff !important;
+            background: #0d1f3c !important;
+        }
+
+        /* ========== 标签列表 ========== */
+        .tag-list-wrap {
+            max-height: 72px;
+            overflow-y: auto;
+            border-top: 1px solid #21262d;
+            padding-top: 6px;
+            margin-top: 2px;
+        }
+        .tag-list-wrap::-webkit-scrollbar {
+            height: 3px;
+            width: 3px;
+        }
+        .tag-list-wrap::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 2px;
+        }
+        .tag-list-title {
+            font-size: 11px;
+            color: #8b949e;
+            margin-bottom: 4px;
+        }
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .tag-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #e6edf3;
+            max-width: 200px;
+        }
+        .tag-item .tag-type-badge {
+            font-size: 9px;
+            padding: 1px 5px;
+            border-radius: 8px;
+            background: #30363d;
+            color: #8b949e;
+            flex-shrink: 0;
+        }
+        .tag-item .tag-type-badge.multi {
+            background: #3d1f1f;
+            color: #f85149;
+        }
+        .tag-item .tag-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            min-width: 0;
+        }
+        .tag-item .tag-range {
+            color: #484f58;
+            font-size: 9px;
+            flex-shrink: 0;
+        }
+        .tag-item .tag-del {
+            color: #8b949e;
+            cursor: pointer;
+            font-size: 13px;
+            line-height: 1;
+            padding: 0 2px;
+            flex-shrink: 0;
+        }
+        .tag-item .tag-del:active {
+            color: #f85149;
+        }
+        .tag-empty {
+            font-size: 11px;
+            color: #484f58;
+        }
+
+        /* ========== 页面整体布局 ========== */
+        #app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 标题栏 -->
+        <div class="header">
+            <h1>📊 K线播放器</h1>
+            <div style="display:flex;align-items:center;gap:8px">
+                <span class="mode-hint" id="modeHint">▶ 播放模式</span>
+                <button id="btnSettings" style="background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;padding:2px 4px;">⚙️</button>
+            </div>
+        </div>
+
+        <!-- 模式切换 -->
+        <div class="mode-bar">
+            <div class="mode-btn active" data-mode="play" id="modePlay">▶ 播放</div>
+            <div class="mode-btn label-single" data-mode="single" id="modeSingle">🏷 单根</div>
+            <div class="mode-btn label-multi" data-mode="multi" id="modeMulti">🏷 多根</div>
+        </div>
+
+        <!-- 图表 -->
+        <div class="chart-container" id="chartContainer">
+            <canvas id="klineCanvas"></canvas>
+        </div>
+
+        <!-- 底部控制 -->
+        <div class="bottom-area">
+            <!-- 进度条 -->
+            <div class="progress-wrap">
+                <span class="idx-label" id="curIdxLabel">0</span>
+                <div class="progress-track" id="progressTrack">
+                    <div class="progress-fill" id="progressFill"></div>
+                    <div class="progress-thumb" id="progressThumb"></div>
+                </div>
+                <span class="idx-label" id="totalIdxLabel">0</span>
+            </div>
+
+            <!-- 播放按钮 -->
+            <div class="play-controls">
+                <button id="btnRewind" title="跳到开头">⏮</button>
+                <button class="play-btn" id="btnPlay">▶</button>
+                <button id="btnForward" title="跳到结尾">⏭</button>
+                <div style="flex:1"></div>
+                <button class="speed-btn" data-speed="0.2">0.2x</button>
+                <button class="speed-btn" data-speed="0.5">0.5x</button>
+                <button class="speed-btn active" data-speed="1">1x</button>
+                <button class="speed-btn" data-speed="1.5">1.5x</button>
+                <button class="speed-btn" data-speed="2">2x</button>
+            </div>
+
+            <!-- 标签列表 -->
+            <div class="tag-list-wrap">
+                <div class="tag-list-title">📌 标签列表 <span id="tagCount" style="color:#484f58">(0)</span></div>
+                <div class="tag-list" id="tagList">
+                    <span class="tag-empty">暂无标签，切换标签模式后点击K线添加</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 标签输入弹窗 -->
+    <div class="tag-overlay" id="tagOverlay">
+        <div class="tag-dialog">
+            <h3 id="tagDialogTitle">添加标签</h3>
+            <div class="tag-range-info" id="tagRangeInfo"></div>
+            <!-- 预设文字快速选择 -->
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px" id="presetTagContainer"></div>
+            <input type="text" id="tagInput" placeholder="输入标签文字..." maxlength="30" autocomplete="off">
+            <div class="tag-dialog-btns">
+                <button class="btn-cancel" id="tagCancel">取消</button>
+                <button class="btn-confirm" id="tagConfirm">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="tag-overlay" id="settingsOverlay">
+        <div class="tag-dialog" style="max-width:380px;max-height:80vh;overflow-y:auto">
+            <h3>⚙️ 标签设置</h3>
+            <div style="margin:12px 0 8px;font-size:13px;color:#f0f6fc">🎨 标签颜色</div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+                <div style="font-size:11px;color:#8b949e;width:100%;margin-bottom:4px">单根标签颜色：</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap" id="singleColorOptions">
+                    <span class="color-opt active" data-color="#f0883e" style="background:#f0883e;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                    <span class="color-opt" data-color="#58a6ff" style="background:#58a6ff;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                    <span class="color-opt" data-color="#3fb950" style="background:#3fb950;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                    <span class="color-opt" data-color="#f85149" style="background:#f85149;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                    <span class="color-opt" data-color="#d2a8ff" style="background:#d2a8ff;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                    <span class="color-opt" data-color="#ffa657" style="background:#ffa657;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+                <div style="font-size:11px;color:#8b949e;width:100%;margin-bottom:4px">多根标签颜色：</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap" id="multiColorOptions">
+                    <span class="color-opt active" data-color="#f85149" style="background:#f85149;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                    <span class="color-opt" data-color="#ff7b72" style="background:#ff7b72;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                    <span class="color-opt" data-color="#da3633" style="background:#da3633;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                    <span class="color-opt" data-color="#ffa657" style="background:#ffa657;width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:inline-block"></span>
+                </div>
+            </div>
+
+            <div style="margin:12px 0 8px;font-size:13px;color:#f0f6fc">📝 预设标签文字</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px" id="presetList"></div>
+            <div style="display:flex;gap:6px;margin-bottom:12px">
+                <input type="text" id="presetInput" placeholder="新增预设文字..." maxlength="20" style="flex:1;padding:6px 10px;border:1px solid #30363d;border-radius:6px;background:#0d1117;color:#e6edf3;font-size:12px;outline:none">
+                <button id="presetAddBtn" style="padding:6px 12px;border:none;border-radius:6px;background:#1f6feb;color:#fff;font-size:12px;cursor:pointer">添加</button>
+            </div>
+
+            <div style="margin:12px 0 8px;font-size:13px;color:#f0f6fc">📌 标签管理</div>
+            <div id="settingsTagList" style="max-height:150px;overflow-y:auto;margin-bottom:8px"></div>
+
+            <div class="tag-dialog-btns">
+                <button class="btn-confirm" id="settingsClose" style="background:#21262d;color:#8b949e">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        //  1. 数据生成（模拟 200 根 K 线）
+        // ============================================================
+        function generateKlineData(count) {
+            const data = [];
+            let price = 100 + Math.random() * 30;
+            const startDate = new Date('2024-01-01');
+            for (let i = 0; i < count; i++) {
+                const date = new Date(startDate);
+                date.setDate(date.getDate() + i);
+                const open = price;
+                const change = (Math.random() - 0.48) * 0.06;
+                const close = +(open * (1 + change)).toFixed(2);
+                const high = +(Math.max(open, close) * (1 + Math.random() * 0.015)).toFixed(2);
+                const low = +(Math.min(open, close) * (1 - Math.random() * 0.015)).toFixed(2);
+                data.push({
+                    index: i,
+                    date: date.toISOString().slice(0, 10),
+                    open, close, high, low,
+                });
+                price = close;
+            }
+            return data;
+        }
+
+        // ============================================================
+        //  2. 全局状态
+        // ============================================================
+        const klineData = generateKlineData(200);
+        let currentIndex = -1;          // 当前播放到的索引，-1 表示未开始
+        let isPlaying = false;
+        let playSpeed = 1;
+        let playTimer = null;
+        let mode = 'play';              // 'play' | 'single' | 'multi'
+        let tags = [];                  // { id, type, start, end, text }
+        let multiStartIndex = -1;       // 多根标签模式下的起始索引
+        let pendingTag = null;          // { type, start, end }
+
+        // Canvas
+        const canvas = document.getElementById('klineCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('chartContainer');
+
+        // 布局缓存
+        let layout = {};
+
+        // ============================================================
+        //  3. Canvas 尺寸 & 布局计算
+        // ============================================================
+        function updateCanvasSize() {
+            const rect = container.getBoundingClientRect();
+            let w = rect.width;
+            let h = rect.height;
+            // 后备：如果容器高度为0（WebView兼容性），手动计算
+            if (h < 10) {
+                const headerH = document.querySelector('.header')?.offsetHeight || 44;
+                const modeBarH = document.querySelector('.mode-bar')?.offsetHeight || 36;
+                const bottomH = document.querySelector('.bottom-area')?.offsetHeight || 120;
+                h = window.innerHeight - headerH - modeBarH - bottomH;
+                w = window.innerWidth;
+                if (h < 50) h = 300;
+            }
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            return { width: w, height: h, left: rect.left, top: rect.top };
+        }
+
+        function calcLayout() {
+            const rect = container.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            const pad = { top: 50, bottom: 30, left: 50, right: 16 };
+
+            // 根据宽度决定可见K线数量
+            const visibleCount = Math.max(8, Math.floor((w - pad.left - pad.right) / 4));
+
+            const endIdx = currentIndex >= 0 ? currentIndex : 0;
+            const startIdx = Math.max(0, endIdx - visibleCount + 1);
+            const chartW = w - pad.left - pad.right;
+            const totalStep = visibleCount > 0 ? chartW / visibleCount : 4;
+            const candleW = Math.max(2, totalStep - 1.5);
+
+            // 计算价格范围（仅可见区域）
+            let minP = Infinity, maxP = -Infinity;
+            for (let i = startIdx; i <= endIdx && i < klineData.length; i++) {
+                const d = klineData[i];
+                if (d.low < minP) minP = d.low;
+                if (d.high > maxP) maxP = d.high;
+            }
+            if (!isFinite(minP)) { minP = 90; maxP = 110; }
+            const padP = (maxP - minP) * 0.1 || 3;
+            minP -= padP;
+            maxP += padP;
+
+            layout = {
+                w, h, pad,
+                visibleCount,
+                startIdx, endIdx,
+                chartW,
+                chartH: h - pad.top - pad.bottom,
+                totalStep,
+                candleW,
+                priceMin: minP,
+                priceMax: maxP,
+                priceRange: maxP - minP,
+            };
+            return layout;
+        }
+
+        // ============================================================
+        //  4. 绘制函数
+        // ============================================================
+        function drawChart() {
+            const rect = container.getBoundingClientRect();
+            const w = rect.width, h = rect.height;
+            if (w < 10 || h < 10) return;
+
+            ctx.clearRect(0, 0, w, h);
+            const lo = calcLayout();
+            const { pad, candleW, totalStep, priceMin, priceMax, priceRange, chartH, startIdx, endIdx } = lo;
+
+            // 背景
+            ctx.fillStyle = '#0d1117';
+            ctx.fillRect(0, 0, w, h);
+
+            // ---- 网格 & 价格刻度 ----
+            ctx.strokeStyle = '#1c2128';
+            ctx.lineWidth = 0.5;
+            const gridCount = 5;
+            for (let i = 0; i <= gridCount; i++) {
+                const y = pad.top + (chartH / gridCount) * i;
+                ctx.beginPath();
+                ctx.moveTo(pad.left, y);
+                ctx.lineTo(w - pad.right, y);
+                ctx.stroke();
+                const price = priceMax - (priceRange / gridCount) * i;
+                ctx.fillStyle = '#484f58';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'right';
+                ctx.fillText(price.toFixed(1), pad.left - 6, y + 3);
+            }
+
+            // 空状态
+            if (currentIndex < 0) {
+                ctx.fillStyle = '#484f58';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('点击 ▶ 开始播放', w / 2, h / 2);
+                updateProgressUI();
+                return;
+            }
+
+            const drawStartX = pad.left;
+
+            // ---- 绘制多根标签的红色框（先绘制，在K线底层） ----
+            const multiTags = tags.filter(t => t.type === 'multi');
+            for (const tag of multiTags) {
+                const ts = Math.max(tag.start, startIdx);
+                const te = Math.min(tag.end, endIdx);
+                if (ts > te) continue;
+                const x1 = drawStartX + (ts - startIdx) * totalStep - 1;
+                const x2 = drawStartX + (te - startIdx) * totalStep + candleW + 1;
+                // 红色半透明背景
+                ctx.fillStyle = multiTagColor + '12';
+                ctx.fillRect(x1, pad.top, x2 - x1, chartH);
+                // 红色虚线边框
+                ctx.strokeStyle = multiTagColor + 'cc';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([5, 4]);
+                ctx.strokeRect(x1, pad.top, x2 - x1, chartH);
+                ctx.setLineDash([]);
+                // 标签文字（框上方，带引线）
+                const labelCX = (x1 + x2) / 2;
+                const labelTW = ctx.measureText('📌 ' + tag.text).width + 16;
+                const labelTX = Math.max(pad.left, Math.min(w - pad.right - labelTW, labelCX - labelTW / 2));
+                // 引线
+                ctx.strokeStyle = multiTagColor + '66';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(labelCX, pad.top - 4);
+                ctx.lineTo(labelCX, pad.top - 20);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                // 标签背景
+                ctx.fillStyle = multiTagColor + '1f';
+                ctx.strokeStyle = multiTagColor + 'b3';
+                ctx.lineWidth = 1;
+                const tr = 4;
+                const lx = labelTX, rx = labelTX + labelTW, ty = pad.top - 38, by = pad.top - 20;
+                ctx.beginPath();
+                ctx.moveTo(lx + tr, ty);
+                ctx.lineTo(rx - tr, ty);
+                ctx.quadraticCurveTo(rx, ty, rx, ty + tr);
+                ctx.lineTo(rx, by - tr);
+                ctx.quadraticCurveTo(rx, by, rx - tr, by);
+                ctx.lineTo(lx + tr, by);
+                ctx.quadraticCurveTo(lx, by, lx, by - tr);
+                ctx.lineTo(lx, ty + tr);
+                ctx.quadraticCurveTo(lx, ty, lx + tr, ty);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                // 文字
+                ctx.fillStyle = multiTagColor;
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('📌 ' + tag.text, labelCX, (ty + by) / 2);
+                // 范围
+                ctx.fillStyle = multiTagColor + '80';
+                ctx.font = '9px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText('#' + tag.start + '~#' + tag.end + ' (' + (tag.end - tag.start + 1) + '根)', labelCX, by + 3);
+            }
+
+            // ---- 绘制每根K线 ----
+            for (let i = startIdx; i <= endIdx && i < klineData.length; i++) {
+                const d = klineData[i];
+                const x = drawStartX + (i - startIdx) * totalStep;
+                const isUp = d.close >= d.open;
+
+                const yHigh = pad.top + (1 - (d.high - priceMin) / priceRange) * chartH;
+                const yLow = pad.top + (1 - (d.low - priceMin) / priceRange) * chartH;
+                const yOpen = pad.top + (1 - (d.open - priceMin) / priceRange) * chartH;
+                const yClose = pad.top + (1 - (d.close - priceMin) / priceRange) * chartH;
+
+                const color = isUp ? '#f85149' : '#3fb950';
+                ctx.strokeStyle = color;
+                ctx.fillStyle = color;
+                ctx.lineWidth = 1;
+
+                const midX = x + candleW / 2;
+
+                // 影线
+                ctx.beginPath();
+                ctx.moveTo(midX, yHigh);
+                ctx.lineTo(midX, yLow);
+                ctx.stroke();
+
+                // 实体
+                const top = Math.min(yOpen, yClose);
+                const bottom = Math.max(yOpen, yClose);
+                const bodyH = Math.max(1, bottom - top);
+                if (isUp) {
+                    ctx.fillRect(x, top, candleW, bodyH);
+                } else {
+                    ctx.fillRect(x, top, candleW, bodyH);
+                }
+
+                // 多根标签模式下选中的起始K线高亮
+                if (mode === 'multi' && i === multiStartIndex) {
+                    ctx.strokeStyle = '#ffa657';
+                    ctx.lineWidth = 2.5;
+                    ctx.strokeRect(x - 1.5, pad.top - 2, candleW + 3, chartH + 4);
+                }
+            }
+
+            // ---- 绘制单根标签标记（K线上方 + 引线连接） ----
+            const singleTags = tags.filter(t => t.type === 'single');
+            for (const tag of singleTags) {
+                const idx = tag.start;
+                if (idx < startIdx || idx > endIdx) continue;
+                const cx = drawStartX + (idx - startIdx) * totalStep + candleW / 2;
+                const d = klineData[idx];
+                // 引线终点：K线的最高价位置
+                const endY = pad.top + (1 - (d.high - priceMin) / priceRange) * chartH;
+                // 标签卡片位置：在K线上方 28px
+                const labelTopY = endY - 30;
+                const labelH = 20;
+                const labelW = Math.max(30, ctx.measureText(tag.text).width + 16);
+                const labelX = cx - labelW / 2;
+                const labelY = labelTopY - labelH;
+                // 确保标签不超出左边界
+                const finalLabelX = Math.max(pad.left, Math.min(w - pad.right - labelW, labelX));
+
+                // 绘制引线（虚线）
+                ctx.strokeStyle = singleTagColor + '99';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(cx, endY);
+                ctx.lineTo(cx, labelTopY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // 标签背景
+                const bgColor = singleTagColor + '26';
+                ctx.fillStyle = bgColor;
+                ctx.strokeStyle = singleTagColor;
+                ctx.lineWidth = 1;
+                const r = 4;
+                const lb = finalLabelX, rt = finalLabelX + labelW, tp = labelY, bt = labelY + labelH;
+                ctx.beginPath();
+                ctx.moveTo(lb + r, tp);
+                ctx.lineTo(rt - r, tp);
+                ctx.quadraticCurveTo(rt, tp, rt, tp + r);
+                ctx.lineTo(rt, bt - r);
+                ctx.quadraticCurveTo(rt, bt, rt - r, bt);
+                ctx.lineTo(lb + r, bt);
+                ctx.quadraticCurveTo(lb, bt, lb, bt - r);
+                ctx.lineTo(lb, tp + r);
+                ctx.quadraticCurveTo(lb, tp, lb + r, tp);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // 标签文字
+                ctx.fillStyle = singleTagColor;
+                ctx.font = '11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(tag.text, finalLabelX + labelW / 2, labelY + labelH / 2);
+
+                // 小圆点标记在K线上方
+                ctx.fillStyle = singleTagColor;
+                ctx.beginPath();
+                ctx.arc(cx, endY - 4, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 索引号在标签右侧
+                ctx.fillStyle = '#8b949e';
+                ctx.font = '9px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('#' + idx, finalLabelX + labelW + 3, labelY + labelH / 2);
+            }
+
+            // ---- 当前播放位置指示 ----
+            if (currentIndex >= startIdx && currentIndex <= endIdx) {
+                const x = drawStartX + (currentIndex - startIdx) * totalStep;
+                ctx.strokeStyle = 'rgba(88, 166, 255, 0.35)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, pad.top);
+                ctx.lineTo(x, pad.top + chartH);
+                ctx.stroke();
+                // 当前K线高亮框
+                ctx.strokeStyle = 'rgba(88, 166, 255, 0.5)';
+                ctx.lineWidth = 1;
+                const cx = drawStartX + (currentIndex - startIdx) * totalStep;
+                ctx.strokeRect(cx - 1, pad.top, candleW + 2, chartH);
+            }
+
+            // ---- 日期标签 ----
+            ctx.fillStyle = '#484f58';
+            ctx.font = '9px sans-serif';
+            ctx.textAlign = 'center';
+            const dateStep = Math.max(1, Math.floor((endIdx - startIdx) / 6));
+            for (let i = startIdx; i <= endIdx; i += dateStep) {
+                const d = klineData[i];
+                if (!d) continue;
+                const x = drawStartX + (i - startIdx) * totalStep + candleW / 2;
+                ctx.fillText(d.date.slice(5), x, pad.top + chartH + 24);
+            }
+
+            // 更新进度UI
+            updateProgressUI();
+        }
+
+        // ============================================================
+        //  5. 播放控制
+        // ============================================================
+        function updateProgressUI() {
+            const total = klineData.length;
+            document.getElementById('curIdxLabel').textContent = currentIndex >= 0 ? (currentIndex + 1) : 0;
+            document.getElementById('totalIdxLabel').textContent = total;
+            const pct = currentIndex >= 0 ? ((currentIndex + 1) / total * 100) : 0;
+            document.getElementById('progressFill').style.width = pct + '%';
+            document.getElementById('progressThumb').style.left = pct + '%';
+        }
+
+        function startPlay() {
+            if (isPlaying) return;
+            if (currentIndex >= klineData.length - 1) {
+                currentIndex = -1;
+                drawChart();
+            }
+            isPlaying = true;
+            document.getElementById('btnPlay').textContent = '⏸';
+            const interval = Math.max(40, Math.floor(200 / playSpeed));
+            clearInterval(playTimer);
+            playTimer = setInterval(() => {
+                if (currentIndex < klineData.length - 1) {
+                    currentIndex++;
+                    drawChart();
+                } else {
+                    stopPlay();
+                }
+            }, interval);
+        }
+
+        function stopPlay() {
+            isPlaying = false;
+            clearInterval(playTimer);
+            playTimer = null;
+            document.getElementById('btnPlay').textContent = '▶';
+        }
+
+        function togglePlay() {
+            if (isPlaying) stopPlay();
+            else startPlay();
+        }
+
+        function goToStart() {
+            stopPlay();
+            currentIndex = -1;
+            drawChart();
+        }
+
+        function goToEnd() {
+            stopPlay();
+            currentIndex = klineData.length - 1;
+            drawChart();
+        }
+
+        function setSpeed(speed) {
+            playSpeed = speed;
+            if (isPlaying) {
+                stopPlay();
+                startPlay();
+            }
+            document.querySelectorAll('.speed-btn').forEach(btn => {
+                btn.classList.toggle('active', Math.abs(parseFloat(btn.dataset.speed) - speed) < 0.01);
+            });
+        }
+
+        // ============================================================
+        //  6. 标签系统
+        // ============================================================
+        function getKlineIndexFromPoint(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+            const lo = layout;
+            if (!lo.totalStep) return -1;
+            const { pad, totalStep, startIdx, endIdx, chartH, candleW } = lo;
+
+            // 检查点击区域（放宽Y轴范围）
+            if (x < pad.left - 5 || x > pad.left + (endIdx - startIdx + 1) * totalStep + 5) return -1;
+            if (y < pad.top - 15 || y > pad.top + chartH + 35) return -1;
+
+            const relX = x - pad.left;
+            const idx = startIdx + Math.round(relX / totalStep);
+            if (idx >= 0 && idx < klineData.length) {
+                return idx;
+            }
+            return -1;
+        }
+
+        function showTagDialog(type, start, end) {
+            const overlay = document.getElementById('tagOverlay');
+            document.getElementById('tagDialogTitle').textContent =
+                type === 'single' ? '✏️ 添加单根K线标签' : '✏️ 添加多根K线标签';
+            const info = document.getElementById('tagRangeInfo');
+            if (type === 'single') {
+                info.textContent = `K线 #${start}  (${klineData[start]?.date || ''})`;
+            } else {
+                info.textContent = `K线 #${start}  ~  #${end}  (${klineData[start]?.date || ''} ~ ${klineData[end]?.date || ''}) · 共 ${end - start + 1} 根`;
+            }
+            document.getElementById('tagInput').value = '';
+            document.getElementById('tagInput').placeholder = '输入标签文字...';
+            renderPresetButtons();
+            pendingTag = { type, start, end };
+            overlay.classList.add('show');
+            setTimeout(() => document.getElementById('tagInput').focus(), 150);
+        }
+
+        function closeTagDialog() {
+            document.getElementById('tagOverlay').classList.remove('show');
+            pendingTag = null;
+            if (mode === 'multi' && multiStartIndex >= 0) {
+                multiStartIndex = -1;
+                drawChart();
+            }
+        }
+
+        function confirmTagAction() {
+            if (!pendingTag) return;
+            const text = document.getElementById('tagInput').value.trim();
+            if (!text) {
+                document.getElementById('tagInput').focus();
+                return;
+            }
+            tags.push({
+                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                type: pendingTag.type,
+                start: pendingTag.start,
+                end: pendingTag.end,
+                text: text,
+            });
+            closeTagDialog();
+            renderTagList();
+            drawChart();
+            saveTagsToStorage();
+        }
+
+        function deleteTagAction(id) {
+            tags = tags.filter(t => t.id !== id);
+            renderTagList();
+            drawChart();
+            saveTagsToStorage();
+        }
+
+        function renderTagList() {
+            const container = document.getElementById('tagList');
+            document.getElementById('tagCount').textContent = '(' + tags.length + ')';
+            if (tags.length === 0) {
+                container.innerHTML = '<span class="tag-empty">暂无标签，切换标签模式后点击K线添加</span>';
+                return;
+            }
+            container.innerHTML = tags.map(t => {
+                const badge = t.type === 'single'
+                    ? '<span class="tag-type-badge">单根</span>'
+                    : '<span class="tag-type-badge multi">多根</span>';
+                const range = t.type === 'single'
+                    ? `<span class="tag-range">#${t.start}</span>`
+                    : `<span class="tag-range">#${t.start}~${t.end}</span>`;
+                return `<div class="tag-item">
+                    ${badge}
+                    <span class="tag-text">${t.text}</span>
+                    ${range}
+                    <span class="tag-del" data-id="${t.id}">✕</span>
+                </div>`;
+            }).join('');
+            container.querySelectorAll('.tag-del').forEach(el => {
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteTagAction(el.dataset.id);
+                });
+            });
+        }
+
+        // localStorage 持久化
+        function saveTagsToStorage() {
+            try {
+                localStorage.setItem('kline_tags', JSON.stringify(tags));
+            } catch (e) { /* ignore */ }
+        }
+
+        function loadTagsFromStorage() {
+            try {
+                const saved = localStorage.getItem('kline_tags');
+                if (saved) {
+                    tags = JSON.parse(saved);
+                    renderTagList();
+                    drawChart();
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        // ============================================================
+        //  6b. 标签设置（颜色、预设文字）
+        // ============================================================
+        let singleTagColor = localStorage.getItem('kline_single_color') || '#f0883e';
+        let multiTagColor = localStorage.getItem('kline_multi_color') || '#f85149';
+        let presetTags = [];
+
+        function loadPresetTags() {
+            try {
+                const saved = localStorage.getItem('kline_presets');
+                presetTags = saved ? JSON.parse(saved) : ['压力位', '支撑位', '突破', '放量', '关键点'];
+                localStorage.setItem('kline_presets', JSON.stringify(presetTags));
+            } catch (e) {
+                presetTags = ['压力位', '支撑位', '突破', '放量', '关键点'];
+            }
+        }
+
+        function savePresetTags() {
+            try { localStorage.setItem('kline_presets', JSON.stringify(presetTags)); } catch (e) {}
+        }
+
+        // 渲染标签对话框中的预设按钮
+        function renderPresetButtons() {
+            const container = document.getElementById('presetTagContainer');
+            if (!container) return;
+            if (!presetTags.length) { container.innerHTML = ''; return; }
+            container.innerHTML = presetTags.map(t =>
+                `<span style="font-size:11px;padding:2px 8px;border:1px solid #30363d;border-radius:10px;color:#8b949e;cursor:pointer" class="preset-tag-btn">${t}</span>`
+            ).join('');
+            container.querySelectorAll('.preset-tag-btn').forEach(el => {
+                el.addEventListener('click', () => {
+                    document.getElementById('tagInput').value = el.textContent;
+                });
+            });
+        }
+
+        // 渲染设置页中的预设列表
+        function renderSettingsPresets() {
+            const container = document.getElementById('presetList');
+            if (!container) return;
+            if (!presetTags.length) {
+                container.innerHTML = '<span style="font-size:11px;color:#484f58">暂无预设</span>';
+                return;
+            }
+            container.innerHTML = presetTags.map((t, i) =>
+                `<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:2px 6px;border:1px solid #30363d;border-radius:8px;color:#e6edf3;background:#21262d">
+                    ${t}
+                    <span class="preset-del" data-index="${i}" style="color:#8b949e;cursor:pointer;font-size:13px;line-height:1">✕</span>
+                </span>`
+            ).join('');
+            container.querySelectorAll('.preset-del').forEach(el => {
+                el.addEventListener('click', () => {
+                    const idx = parseInt(el.dataset.index);
+                    presetTags.splice(idx, 1);
+                    savePresetTags();
+                    renderSettingsPresets();
+                    renderPresetButtons();
+                });
+            });
+        }
+
+        // 渲染设置页中的标签管理列表
+        function renderSettingsTagList() {
+            const container = document.getElementById('settingsTagList');
+            if (!container) return;
+            if (!tags.length) {
+                container.innerHTML = '<span style="font-size:11px;color:#484f58">暂无标签</span>';
+                return;
+            }
+            container.innerHTML = tags.map((t, i) => {
+                const color = t.type === 'single' ? singleTagColor : multiTagColor;
+                const label = t.type === 'single' ? `#${t.start}` : `#${t.start}~#${t.end}`;
+                return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #21262d;font-size:12px">
+                    <span style="color:${color};font-weight:bold">●</span>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.text}</span>
+                    <span style="color:#484f58;font-size:10px">${label}</span>
+                    <input type="text" value="${t.text}" maxlength="20" data-id="${t.id}" style="width:60px;padding:2px 4px;border:1px solid #30363d;border-radius:4px;background:#0d1117;color:#e6edf3;font-size:11px;outline:none">
+                    <button class="settings-tag-save" data-id="${t.id}" style="padding:2px 6px;border:none;border-radius:4px;background:#1f6feb;color:#fff;font-size:10px;cursor:pointer">保存</button>
+                    <span class="settings-tag-del" data-id="${t.id}" style="color:#f85149;cursor:pointer;font-size:14px">✕</span>
+                </div>`;
+            }).join('');
+            // 编辑保存
+            container.querySelectorAll('.settings-tag-save').forEach(el => {
+                el.addEventListener('click', () => {
+                    const id = el.dataset.id;
+                    const input = el.parentElement.querySelector('input');
+                    const newText = input.value.trim();
+                    if (!newText) return;
+                    const tag = tags.find(t => t.id === id);
+                    if (tag) { tag.text = newText; renderTagList(); drawChart(); saveTagsToStorage(); }
+                });
+            });
+            // 删除
+            container.querySelectorAll('.settings-tag-del').forEach(el => {
+                el.addEventListener('click', () => {
+                    deleteTagAction(el.dataset.id);
+                    renderSettingsTagList();
+                });
+            });
+        }
+
+        // 颜色选择器初始化
+        function initColorPicker() {
+            document.querySelectorAll('#singleColorOptions .color-opt').forEach(el => {
+                el.addEventListener('click', () => {
+                    document.querySelectorAll('#singleColorOptions .color-opt').forEach(e => e.style.borderColor = 'transparent');
+                    el.style.borderColor = '#fff';
+                    singleTagColor = el.dataset.color;
+                    localStorage.setItem('kline_single_color', singleTagColor);
+                    drawChart();
+                });
+                if (el.dataset.color === singleTagColor) {
+                    el.style.borderColor = '#fff';
+                }
+            });
+            document.querySelectorAll('#multiColorOptions .color-opt').forEach(el => {
+                el.addEventListener('click', () => {
+                    document.querySelectorAll('#multiColorOptions .color-opt').forEach(e => e.style.borderColor = 'transparent');
+                    el.style.borderColor = '#fff';
+                    multiTagColor = el.dataset.color;
+                    localStorage.setItem('kline_multi_color', multiTagColor);
+                    drawChart();
+                });
+                if (el.dataset.color === multiTagColor) {
+                    el.style.borderColor = '#fff';
+                }
+            });
+        }
+
+        // 设置弹窗开关
+        function openSettings() {
+            document.getElementById('settingsOverlay').classList.add('show');
+            renderSettingsPresets();
+            renderSettingsTagList();
+            initColorPicker();
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsOverlay').classList.remove('show');
+        }
+
+        // ============================================================
+        //  7. 交互处理
+        // ============================================================
+        function handleCanvasTap(clientX, clientY) {
+            const idx = getKlineIndexFromPoint(clientX, clientY);
+            if (idx < 0) return;
+
+            if (mode === 'play') {
+                // 播放模式下点击跳转位置
+                stopPlay();
+                currentIndex = idx;
+                drawChart();
+                return;
+            }
+
+            if (mode === 'single') {
+                showTagDialog('single', idx, idx);
+                return;
+            }
+
+            if (mode === 'multi') {
+                if (multiStartIndex < 0) {
+                    multiStartIndex = idx;
+                    drawChart();
+                } else {
+                    const start = Math.min(multiStartIndex, idx);
+                    const end = Math.max(multiStartIndex, idx);
+                    multiStartIndex = -1;
+                    if (start === end) {
+                        showTagDialog('single', start, end);
+                    } else {
+                        showTagDialog('multi', start, end);
+                    }
+                }
+            }
+        }
+
+        // 鼠标点击
+        canvas.addEventListener('click', (e) => {
+            handleCanvasTap(e.clientX, e.clientY);
+        });
+
+        // 触摸
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            handleCanvasTap(touch.clientX, touch.clientY);
+        }, { passive: false });
+
+        // ============================================================
+        //  8. 进度条拖拽
+        // ============================================================
+        let dragging = false;
+        const track = document.getElementById('progressTrack');
+
+        function setProgress(clientX) {
+            const rect = track.getBoundingClientRect();
+            let pct = (clientX - rect.left) / rect.width;
+            pct = Math.max(0, Math.min(1, pct));
+            const idx = Math.floor(pct * klineData.length);
+            const newIdx = Math.max(-1, Math.min(klineData.length - 1, idx - 1));
+            if (newIdx !== currentIndex) {
+                currentIndex = newIdx;
+                drawChart();
+            }
+        }
+
+        track.addEventListener('mousedown', (e) => { dragging = true; setProgress(e.clientX); });
+        document.addEventListener('mousemove', (e) => { if (dragging) setProgress(e.clientX); });
+        document.addEventListener('mouseup', () => { dragging = false; });
+
+        track.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            dragging = true;
+            setProgress(e.touches[0].clientX);
+        }, { passive: false });
+        document.addEventListener('touchmove', (e) => {
+            if (dragging) setProgress(e.touches[0].clientX);
+        }, { passive: false });
+        document.addEventListener('touchend', () => { dragging = false; });
+
+        // ============================================================
+        //  9. 模式切换
+        // ============================================================
+        function setMode(newMode) {
+            mode = newMode;
+            multiStartIndex = -1;
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            const hint = document.getElementById('modeHint');
+            if (newMode === 'play') {
+                document.getElementById('modePlay').classList.add('active');
+                hint.textContent = '▶ 播放模式 · 点击K线跳转';
+                hint.className = 'mode-hint';
+            } else if (newMode === 'single') {
+                document.getElementById('modeSingle').classList.add('active');
+                hint.textContent = '🏷 单根标签 · 点击K线添加';
+                hint.className = 'mode-hint active-label';
+            } else {
+                document.getElementById('modeMulti').classList.add('active');
+                hint.textContent = '🏷 多根标签 · 点击起止两根K线';
+                hint.className = 'mode-hint active-label';
+            }
+            drawChart();
+        }
+
+        document.getElementById('modePlay').addEventListener('click', () => setMode('play'));
+        document.getElementById('modeSingle').addEventListener('click', () => setMode('single'));
+        document.getElementById('modeMulti').addEventListener('click', () => setMode('multi'));
+
+        // ============================================================
+        //  10. 按钮事件
+        // ============================================================
+        document.getElementById('btnPlay').addEventListener('click', togglePlay);
+        document.getElementById('btnRewind').addEventListener('click', goToStart);
+        document.getElementById('btnForward').addEventListener('click', goToEnd);
+
+        document.querySelectorAll('.speed-btn').forEach(btn => {
+            btn.addEventListener('click', () => setSpeed(parseFloat(btn.dataset.speed)));
+        });
+
+        document.getElementById('tagCancel').addEventListener('click', closeTagDialog);
+        document.getElementById('tagConfirm').addEventListener('click', confirmTagAction);
+        document.getElementById('tagInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') confirmTagAction();
+            if (e.key === 'Escape') closeTagDialog();
+        });
+        document.getElementById('tagOverlay').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('tagOverlay')) closeTagDialog();
+        });
+
+        // 设置按钮
+        document.getElementById('btnSettings').addEventListener('click', openSettings);
+        document.getElementById('settingsClose').addEventListener('click', closeSettings);
+        document.getElementById('settingsOverlay').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('settingsOverlay')) closeSettings();
+        });
+        // 添加预设
+        document.getElementById('presetAddBtn').addEventListener('click', () => {
+            const input = document.getElementById('presetInput');
+            const text = input.value.trim();
+            if (!text || presetTags.includes(text)) return;
+            presetTags.push(text);
+            savePresetTags();
+            renderSettingsPresets();
+            renderPresetButtons();
+            input.value = '';
+        });
+        document.getElementById('presetInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') document.getElementById('presetAddBtn').click();
+        });
+
+        // ============================================================
+        //  11. 自适应
+        // ============================================================
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => drawChart(), 100);
+        });
+
+        if (window.ResizeObserver) {
+            const observer = new ResizeObserver(() => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => drawChart(), 80);
+            });
+            observer.observe(container);
+        }
+
+        // ============================================================
+        //  12. 初始化
+        // ============================================================
+        function init() {
+            loadPresetTags();
+            updateCanvasSize();
+            currentIndex = -1;
+            drawChart();
+            renderTagList();
+            updateProgressUI();
+            loadTagsFromStorage();
+            // 延迟重试确保布局稳定
+            setTimeout(() => {
+                updateCanvasSize();
+                drawChart();
+            }, 300);
+            setTimeout(() => {
+                updateCanvasSize();
+                drawChart();
+            }, 800);
+        }
+
+        // 页面完全加载后再次调整
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                updateCanvasSize();
+                drawChart();
+            }, 100);
+        });
+
+        init();
+        console.log('✅ K线播放器已启动，数据量:', klineData.length);
+    </script>
+</body>
+</html>

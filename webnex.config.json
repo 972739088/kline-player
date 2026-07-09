@@ -1,0 +1,23 @@
+{
+  "install": {
+    "autoInstall": false,
+    "command": ""
+  },
+  "runtime": {
+    "autoOpenBrowser": true,
+    "entry": "index.html",
+    "env": {},
+    "host": "0.0.0.0",
+    "name": "静态 HTML 服务",
+    "nodeVersion": "",
+    "phpVersion": "",
+    "port": 3000,
+    "pythonVersion": "",
+    "startCommand": "python3 -m http.server ${port} --directory .",
+    "url": "http://localhost:${port}",
+    "workingDirectory": "."
+  },
+  "template": "HTML_BASIC",
+  "type": "html",
+  "version": 1
+}
