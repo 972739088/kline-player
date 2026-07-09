@@ -580,9 +580,10 @@
             stopPlay();
             currentIndex = -1;
             viewOffset = 0;
+            // 先把当前标签保存到当前系统，再清空显示
+            if (tagSets[activeTagSetId]) tagSets[activeTagSetId].tags = tags.slice();
             tags = [];
             renderTagList();
-            saveTagsToStorage();
             document.getElementById('totalIdxLabel').textContent = klineData.length;
             document.getElementById('modeHint').textContent = '▶ 播放模式 · ' + period + '分周期 · ' + klineData.length + '根';
             document.querySelectorAll('.period-btn').forEach(btn => {
@@ -1814,9 +1815,10 @@
             stopPlay();
             currentIndex = -1;
             viewOffset = 0;
+            // 先把当前标签保存到当前系统，再清空显示
+            if (tagSets[activeTagSetId]) tagSets[activeTagSetId].tags = tags.slice();
             tags = [];
             renderTagList();
-            saveTagsToStorage();
             // 更新UI
             document.getElementById('totalIdxLabel').textContent = klineData.length;
             document.getElementById('csvStatus').textContent = '✅ 导入成功：' + klineData.length + ' 条K线数据';
@@ -1867,9 +1869,10 @@
             stopPlay();
             currentIndex = -1;
             viewOffset = 0;
+            // 先把当前标签保存到当前系统，再清空显示
+            if (tagSets[activeTagSetId]) tagSets[activeTagSetId].tags = tags.slice();
             tags = [];
             renderTagList();
-            saveTagsToStorage();
             document.getElementById('totalIdxLabel').textContent = klineData.length;
             document.getElementById('csvInput').value = '';
             document.getElementById('csvStatus').textContent = '↺ 已恢复为默认模拟数据（200条基础1分K线）';
